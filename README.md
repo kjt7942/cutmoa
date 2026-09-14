@@ -82,6 +82,7 @@ GitHub: https://github.com/kjt7942/short-video-app
 
 - **클립 길이 프리셋 + 커스텀 시간** — 2/3/4초 고정 칩 외에, 사용자가 직접 초를 지정(1~30초)해 최근 2개까지 기억(`DurationPrefs`, SharedPreferences 저장)
 - **자동 종료 촬영** — 선택한 시간이 지나면 자동으로 녹화 중지, 진행률 바·카운트다운 표시
+- **터치 포커스 + 연속 자동 포커스** — 기본은 CameraX 연속 비디오 AF, 프리뷰를 탭하면 그 지점에 AF·AE를 맞추고 약 5초 뒤 연속 AF로 복귀(녹화 중에도 동작)
 - **여러 클립 이어 찍기 → 한 편으로 병합** — 클립을 여러 번 찍은 뒤 Media3 Transformer로 순서대로 합치기, 프로세스가 죽어도 이어지도록 WorkManager 백그라운드 처리
 - **오버레이 편집 (텍스트/이모지)** — 병합된 영상 위에 레이어를 올리고 화면에서 직접 드래그·크기 조절
 - **키프레임 애니메이션** — 레이어마다 여러 시점(keyframe)에 위치·크기를 지정하면 그 사이를 자동 보간(linear interpolation)해서 움직이는 오버레이 구현, 레이어별로 노출 구간(start~end)도 별도 설정 가능
@@ -139,6 +140,12 @@ GitHub: https://github.com/kjt7942/short-video-app
 8. **01:53 — README 작성**
    프로젝트 개요, 화면 흐름, 기술 스택 문서화 후 커밋/푸시.
 
+### 2026-09-14 — 터치 포커스 추가
+
+- `VideoCaptureManager`가 `bindToLifecycle`이 돌려주는 `Camera`를 버리고 있어 `cameraControl` 접근 불가 → 필드로 보관하고 `focusAt(MeteringPoint)` 추가(`FocusMeteringAction`).
+- `CameraScreen`의 `PreviewView`에 터치 리스너를 달아 `meteringPointFactory`로 화면 좌표를 센서 좌표로 변환 후 포커스 요청.
+- 자동 포커스는 CameraX가 `VideoCapture` 바인딩 시 기본으로 연속 비디오 AF를 쓰므로 별도 코드 불필요.
+
 ## 스크린샷
 
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 |
@@ -161,6 +168,7 @@ GitHub: https://github.com/kjt7942/short-video-app
 
 - **오디오 트랙 없는 갤러리 클립 대응** — [트러블슈팅](#트러블슈팅--배운-점)에 적어둔 대로, 오디오가 없는 클립이 섞여도 concat이 안 깨지도록 `setForceAudioTrack(true)` 적용
 - **텍스트 스타일 옵션 확대** — 지금은 프리셋 5색만 지원(`OverlayEditorScreen.kt:75`). 폰트/굵기/외곽선(스트로크)/반투명 배경 박스, 커스텀 색상(HSV 피커) 추가
+- **포커스 UX 보강** — 탭 위치에 포커스 링 표시, 길게 눌러 AF/AE 고정(lock)
 - **배경음악(BGM) 삽입** — 병합 영상에 오디오 트랙 추가/믹싱 기능
 - **필터/보정** — 밝기·채도 등 기본 영상 필터, Media3 Effect로 확장
 - **오버레이 템플릿 저장/재사용** — 자주 쓰는 자막·이모지 배치를 템플릿으로 저장했다가 다음 영상에 재사용

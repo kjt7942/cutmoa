@@ -9,6 +9,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.Gravity
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.camera.core.Preview
 import androidx.camera.video.VideoRecordEvent
@@ -193,6 +194,13 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 val previewView = PreviewView(ctx)
+                previewView.setOnTouchListener { v, event ->
+                    if (event.action == MotionEvent.ACTION_UP) {
+                        captureManager.focusAt(previewView.meteringPointFactory.createPoint(event.x, event.y))
+                        v.performClick()
+                    }
+                    true
+                }
                 val preview = Preview.Builder()
                     .setPreviewStabilizationEnabled(true)
                     .build()

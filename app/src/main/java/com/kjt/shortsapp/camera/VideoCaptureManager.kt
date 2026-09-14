@@ -4,7 +4,10 @@ import android.content.ContentValues
 import android.content.Context
 import android.provider.MediaStore
 import android.util.Log
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.MeteringPoint
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FallbackStrategy
@@ -29,6 +32,7 @@ private const val TAG = "VideoCaptureManager"
 class VideoCaptureManager(private val context: Context) {
 
     private var cameraProvider: ProcessCameraProvider? = null
+    private var camera: Camera? = null
     private var videoCapture: VideoCapture<Recorder>? = null
     private var activeRecording: Recording? = null
 
@@ -62,10 +66,18 @@ class VideoCaptureManager(private val context: Context) {
                 videoCapture = capture
 
                 provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, capture)
+                camera = provider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, capture)
             },
             ContextCompat.getMainExecutor(context)
         )
+    }
+
+    /**
+     * Tap-to-focus: one-shot AF + AE on [point]. CameraX auto-cancels after ~5s and falls
+     * back to continuous video AF, and it doesn't interrupt an active recording.
+     */
+    fun focusAt(point: MeteringPoint) {
+        camera?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
     }
 
     /**
@@ -133,6 +145,7 @@ class VideoCaptureManager(private val context: Context) {
         activeRecording = null
         cameraProvider?.unbindAll()
         cameraProvider = null
+        camera = null
         videoCapture = null
     }
 }
