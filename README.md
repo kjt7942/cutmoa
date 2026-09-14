@@ -184,7 +184,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 - 이름 후보(컷모아 / 숏컷캠 / 컷컷 / 이어캠 / 스냅컷 / 3초컷) 중 "짧은 컷을 모아 한 편으로"라는 앱 흐름이 그대로 드러나는 **컷모아** 선택. "쇼츠(Shorts)"는 유튜브 상표라 스토어 등록을 고려해 이름에서 제외.
 - 패키지 `com.kjt.shortsapp` → `com.kjt.cutmoa`, 테마 `Theme.CutMoa`, 저장 폴더 `Movies/CutMoa`, 파일명 접두어 `CUTMOA_`로 일괄 변경.
-- 저장소도 새 이름으로 분리: 기존 [`short-video-app`](https://github.com/kjt7942/short-video-app)은 그대로 두고, 전체 커밋 이력을 [`cutmoa`](https://github.com/kjt7942/cutmoa)로 옮겨 이어서 개발.
+- 저장소도 새 이름으로 이전: 전체 커밋 이력을 [`cutmoa`](https://github.com/kjt7942/cutmoa)로 옮긴 뒤(기존 master가 새 저장소에 포함된 것을 `git merge-base --is-ancestor`로 확인), 기존 `short-video-app` 저장소는 삭제.
 
 ### 2026-09-15 00:38 — 앱 아이콘 제작 (`1f88c0a`)
 
