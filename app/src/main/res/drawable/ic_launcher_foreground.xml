@@ -1,12 +1,50 @@
+<!--
+    컷모아 launcher foreground: three clip cards fanning together, play button on the front card.
+    Vector redraw of the ChatGPT concept image (docs/icon/chatgpt_icon_concept.png) — the raster had
+    compression halos and no transparent layer, and flat shapes stay crisp at every density.
+    Everything sits inside the 66dp adaptive-icon safe circle (max corner radius ~30 from center).
+    Each card: 28x34, corner radius 5, centered on its group origin; groups rotate then translate.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FF4D5B"
-        android:pathData="M54,30 L74,54 L54,78 L34,54 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M46,42 L68,54 L46,66 Z" />
+
+    <group android:translateX="45.3" android:translateY="54.8" android:rotation="-27">
+        <path
+            android:fillColor="#6EE3C4"
+            android:pathData="M-9,-17 H9 A5,5 0 0 1 14,-12 V12 A5,5 0 0 1 9,17 H-9 A5,5 0 0 1 -14,12 V-12 A5,5 0 0 1 -9,-17 Z" />
+    </group>
+
+    <!-- Soft shadow the yellow card casts on the mint one. -->
+    <group android:translateX="49.5" android:translateY="53.4" android:rotation="-12">
+        <path
+            android:fillColor="#33000000"
+            android:pathData="M-9,-17 H9 A5,5 0 0 1 14,-12 V12 A5,5 0 0 1 9,17 H-9 A5,5 0 0 1 -14,12 V-12 A5,5 0 0 1 -9,-17 Z" />
+    </group>
+    <group android:translateX="52" android:translateY="52.9" android:rotation="-12">
+        <path
+            android:fillColor="#FFC21F"
+            android:pathData="M-9,-17 H9 A5,5 0 0 1 14,-12 V12 A5,5 0 0 1 9,17 H-9 A5,5 0 0 1 -14,12 V-12 A5,5 0 0 1 -9,-17 Z" />
+    </group>
+
+    <!-- Soft shadow the red card casts on the yellow one. -->
+    <group android:translateX="60.2" android:translateY="55.2" android:rotation="15">
+        <path
+            android:fillColor="#33000000"
+            android:pathData="M-9,-17 H9 A5,5 0 0 1 14,-12 V12 A5,5 0 0 1 9,17 H-9 A5,5 0 0 1 -14,12 V-12 A5,5 0 0 1 -9,-17 Z" />
+    </group>
+    <group android:translateX="62.7" android:translateY="54.7" android:rotation="15">
+        <path
+            android:fillColor="#FF4B3E"
+            android:pathData="M-9,-17 H9 A5,5 0 0 1 14,-12 V12 A5,5 0 0 1 9,17 H-9 A5,5 0 0 1 -14,12 V-12 A5,5 0 0 1 -9,-17 Z" />
+        <!-- Stroke with round joins softens the triangle's corners. -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2.5"
+            android:strokeLineJoin="round"
+            android:pathData="M-5.5,-7.5 L8.5,0 L-5.5,7.5 Z" />
+    </group>
 </vector>
