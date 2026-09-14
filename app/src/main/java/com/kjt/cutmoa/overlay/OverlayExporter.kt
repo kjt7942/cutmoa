@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.overlay
+package com.kjt.cutmoa.overlay
 
 import android.content.Context
 import android.net.Uri

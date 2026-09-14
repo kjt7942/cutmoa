@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.merge
+package com.kjt.cutmoa.merge
 
 import android.content.Context
 import android.net.Uri
@@ -7,7 +7,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.kjt.shortsapp.util.ExportNotifications
+import com.kjt.cutmoa.util.ExportNotifications
 import java.io.File
 
 /**

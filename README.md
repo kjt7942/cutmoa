@@ -1,8 +1,8 @@
-# ShortsApp
+# 컷모아 (CutMoa)
 
-GitHub: https://github.com/kjt7942/short-video-app
+GitHub: https://github.com/kjt7942/cutmoa
 
-여러 클립 촬영 → 병합 → 오버레이(텍스트/스티커) 편집 → 내보내기까지 지원하는 Android 숏폼 비디오 앱.
+짧은 컷을 모아 한 편으로. 여러 클립 촬영 → 병합 → 오버레이(텍스트/스티커) 편집 → 내보내기까지 지원하는 Android 숏폼 비디오 앱.
 
 ## 목적
 
@@ -170,6 +170,12 @@ GitHub: https://github.com/kjt7942/short-video-app
 - 추적 박스를 얇은 외곽선 + 굵은 둥근 모서리 브래킷 형태로 변경.
 - adb로 앱 실행 → 화면 탭(`input tap`) → `screencap`으로 캡처하며 박스 위치를 직접 검증, 아래 두 버그를 발견해 수정([트러블슈팅](#트러블슈팅--배운-점) 참고).
 
+### 2026-09-14 — 앱 이름 변경: ShortsApp → 컷모아(CutMoa)
+
+- 이름 후보(컷모아 / 숏컷캠 / 컷컷 / 이어캠 / 스냅컷 / 3초컷) 중 "짧은 컷을 모아 한 편으로"라는 앱 흐름이 그대로 드러나는 **컷모아** 선택. "쇼츠(Shorts)"는 유튜브 상표라 스토어 등록을 고려해 이름에서 제외.
+- 패키지 `com.kjt.shortsapp` → `com.kjt.cutmoa`, 테마 `Theme.CutMoa`, 저장 폴더 `Movies/CutMoa`, 파일명 접두어 `CUTMOA_`로 일괄 변경.
+- 저장소도 새 이름으로 분리: 기존 [`short-video-app`](https://github.com/kjt7942/short-video-app)은 그대로 두고, 전체 커밋 이력을 [`cutmoa`](https://github.com/kjt7942/cutmoa)로 옮겨 이어서 개발.
+
 ## 스크린샷
 
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 |
@@ -197,6 +203,7 @@ GitHub: https://github.com/kjt7942/short-video-app
 
 - **오디오 트랙 없는 갤러리 클립 대응** — [트러블슈팅](#트러블슈팅--배운-점)에 적어둔 대로, 오디오가 없는 클립이 섞여도 concat이 안 깨지도록 `setForceAudioTrack(true)` 적용
 - **텍스트 스타일 옵션 확대** — 지금은 프리셋 5색만 지원(`OverlayEditorScreen.kt:75`). 폰트/굵기/외곽선(스트로크)/반투명 배경 박스, 커스텀 색상(HSV 피커) 추가
+- **앱 아이콘 교체** — ChatGPT 이미지 생성으로 컷모아 아이콘을 만들어 adaptive icon(전경/배경 분리)으로 적용
 - **추적 AF 고도화** — 크기 변화·빠른 움직임 대응(피라미드 탐색, 스케일 추정), 필요 시 ML Kit 객체 감지와 병행
 - **포커스 UX 보강** — 길게 눌러 AF/AE 고정(lock), 노출 밝기 슬라이더
 - **가이드 옵션** — 수평 가이드 켜기/끄기 토글, 수평이 맞았을 때 짧은 진동

@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.util
+package com.kjt.cutmoa.util
 
 import android.content.Context
 import android.graphics.Bitmap

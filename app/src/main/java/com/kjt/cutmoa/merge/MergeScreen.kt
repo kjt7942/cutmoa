@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.merge
+package com.kjt.cutmoa.merge
 
 import android.graphics.Bitmap
 import android.net.Uri
@@ -49,7 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import com.kjt.shortsapp.util.VideoFrameUtil
+import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext

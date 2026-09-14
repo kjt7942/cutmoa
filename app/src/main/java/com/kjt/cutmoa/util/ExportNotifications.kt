@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.util
+package com.kjt.cutmoa.util
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

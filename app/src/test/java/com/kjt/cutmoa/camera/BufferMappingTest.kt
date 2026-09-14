@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.camera
+package com.kjt.cutmoa.camera
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

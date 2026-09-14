@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.camera
+package com.kjt.cutmoa.camera
 
 import android.content.ContentValues
 import android.content.Context
@@ -300,7 +300,7 @@ class VideoCaptureManager(private val context: Context) {
     }
 
     /**
-     * Starts recording to MediaStore (Movies/ShortsApp) so the clip shows up in the
+     * Starts recording to MediaStore (Movies/CutMoa) so the clip shows up in the
      * gallery immediately — no manual scan needed.
      *
      * @param onEvent fired on the main thread for start/finalize/status events.
@@ -315,11 +315,11 @@ class VideoCaptureManager(private val context: Context) {
             return
         }
 
-        val name = "SHORTS_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())}.mp4"
+        val name = "CUTMOA_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())}.mp4"
         val contentValues = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/ShortsApp")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CutMoa")
         }
         val outputOptions = MediaStoreOutputOptions.Builder(
             context.contentResolver,

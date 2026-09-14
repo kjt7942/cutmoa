@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.util
+package com.kjt.cutmoa.util
 
 import android.content.ContentValues
 import android.content.Context
@@ -14,7 +14,7 @@ object MediaStoreExport {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/ShortsApp")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CutMoa")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.Video.Media.IS_PENDING, 1)
             }

@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.kjt.shortsapp"
+    namespace = "com.kjt.cutmoa"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.kjt.shortsapp"
+        applicationId = "com.kjt.cutmoa"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

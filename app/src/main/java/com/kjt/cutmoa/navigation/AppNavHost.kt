@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.navigation
+package com.kjt.cutmoa.navigation
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
@@ -7,10 +7,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.kjt.shortsapp.camera.CameraScreen
-import com.kjt.shortsapp.merge.MergeScreen
-import com.kjt.shortsapp.overlay.OverlayEditorScreen
-import com.kjt.shortsapp.result.ResultScreen
+import com.kjt.cutmoa.camera.CameraScreen
+import com.kjt.cutmoa.merge.MergeScreen
+import com.kjt.cutmoa.overlay.OverlayEditorScreen
+import com.kjt.cutmoa.result.ResultScreen
 
 private object Routes {
     const val RECORD = "record"

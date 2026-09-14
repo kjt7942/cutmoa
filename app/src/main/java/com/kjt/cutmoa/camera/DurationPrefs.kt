@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.camera
+package com.kjt.cutmoa.camera
 
 import android.content.Context
 

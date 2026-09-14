@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.overlay
+package com.kjt.cutmoa.overlay
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures

@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.overlay
+package com.kjt.cutmoa.overlay
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
-import com.kjt.shortsapp.util.VideoFrameUtil
+import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf

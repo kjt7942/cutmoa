@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ShortsApp"
+rootProject.name = "CutMoa"
 include(":app")

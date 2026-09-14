@@ -1,12 +1,12 @@
-package com.kjt.shortsapp.overlay
+package com.kjt.cutmoa.overlay
 
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.kjt.shortsapp.util.ExportNotifications
-import com.kjt.shortsapp.util.MediaStoreExport
+import com.kjt.cutmoa.util.ExportNotifications
+import com.kjt.cutmoa.util.MediaStoreExport
 import java.io.File
 
 class OverlayExportWorker(
@@ -32,7 +32,7 @@ class OverlayExportWorker(
                 setProgressAsync(workDataOf(KEY_PROGRESS to percent))
             }
             val galleryUri = MediaStoreExport.copyToGallery(
-                applicationContext, tempOutput, "SHORTS_FINAL_${System.currentTimeMillis()}.mp4"
+                applicationContext, tempOutput, "CUTMOA_FINAL_${System.currentTimeMillis()}.mp4"
             )
             Result.success(workDataOf(KEY_OUTPUT_URI to galleryUri.toString()))
         } catch (t: Throwable) {

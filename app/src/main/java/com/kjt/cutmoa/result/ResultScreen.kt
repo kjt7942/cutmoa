@@ -1,4 +1,4 @@
-package com.kjt.shortsapp.result
+package com.kjt.cutmoa.result
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
