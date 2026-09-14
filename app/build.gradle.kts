@@ -83,4 +83,6 @@ dependencies {
 
     // Compose util for gesture-driven overlay drag/scale
     implementation("androidx.compose.foundation:foundation")
+
+    testImplementation("junit:junit:4.13.2")
 }

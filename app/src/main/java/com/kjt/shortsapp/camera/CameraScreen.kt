@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.camera.core.Preview
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -59,6 +60,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -196,7 +203,7 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                 val previewView = PreviewView(ctx)
                 previewView.setOnTouchListener { v, event ->
                     if (event.action == MotionEvent.ACTION_UP) {
-                        captureManager.focusAt(previewView.meteringPointFactory.createPoint(event.x, event.y))
+                        captureManager.onPreviewTap(event.x, event.y)
                         v.performClick()
                     }
                     true
@@ -205,10 +212,40 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                     .setPreviewStabilizationEnabled(true)
                     .build()
                     .also { it.surfaceProvider = previewView.surfaceProvider }
-                captureManager.bindToLifecycle(lifecycleOwner, preview)
+                captureManager.bindToLifecycle(lifecycleOwner, preview, previewView)
                 previewView
             }
         )
+
+        LevelGuide(modifier = Modifier.fillMaxSize())
+
+        // Tracking AF box — drawn in PreviewView pixels, which match this Box's coordinates.
+        // Samsung Camera style: thin outline with bold corner brackets.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val box = captureManager.trackedBox.value ?: return@Canvas
+            val color = Color(0xFFFFC928)
+            val radius = 6.dp.toPx()
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(box.left, box.top),
+                size = Size(box.width(), box.height()),
+                cornerRadius = CornerRadius(radius),
+                style = Stroke(1.dp.toPx()),
+            )
+            val arm = minOf(box.width(), box.height()) * 0.18f
+            val bold = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+            for ((cx, sx) in listOf(box.left to 1f, box.right to -1f)) {
+                for ((cy, sy) in listOf(box.top to 1f, box.bottom to -1f)) {
+                    val corner = Path().apply {
+                        moveTo(cx, cy + sy * arm)
+                        lineTo(cx, cy + sy * radius)
+                        quadraticTo(cx, cy, cx + sx * radius, cy)
+                        lineTo(cx + sx * arm, cy)
+                    }
+                    drawPath(corner, color, style = bold)
+                }
+            }
+        }
 
         TextButton(
             onClick = onNavigateToMerge,
