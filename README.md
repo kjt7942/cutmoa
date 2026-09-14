@@ -95,7 +95,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 `촬영(Record)` → `병합(Merge)` → `오버레이 편집(Overlay)` → `결과(Result)`
 
-- **CameraScreen** — CameraX 기반 다중 클립 녹화
+- **CameraScreen** — CameraX 기반 구간 녹화(자동 종료), 추적 AF(`SubjectTracker` + `ImageAnalysis`), 수평·각도 가이드(`LevelGuide`)
 - **MergeScreen** — Media3 Transformer로 클립 병합, `MergeWorker`가 백그라운드에서 처리
 - **OverlayEditorScreen** — 병합된 영상 위에 텍스트/스티커 배치, 드래그·스케일 편집, `OverlayExportWorker`로 내보내기
 - **ResultScreen** — 최종 영상 확인 및 미디어스토어 저장
@@ -103,11 +103,13 @@ GitHub: https://github.com/kjt7942/cutmoa
 ## 기술 스택
 
 - Kotlin, Jetpack Compose (Material3)
-- CameraX 1.4.1 — 영상 촬영
+- CameraX 1.4.1 — 영상 촬영, `ImageAnalysis`(추적 AF용 프레임 분석), `ViewPort`(스트림 간 크롭 통일)
 - Media3 Transformer/Effect 1.5.0 — 병합, 오버레이 렌더링
 - Navigation Compose — 화면 전환
 - WorkManager — 프로세스 종료에도 살아남는 백그라운드 병합/내보내기
 - Accompanist Permissions — 런타임 권한 처리
+- Android SensorManager(중력 센서) — 수평·각도 가이드, 추가 라이브러리 없음
+- JUnit 4 — 추적 로직·좌표 변환 JVM 유닛 테스트
 
 ## 요구 사항
 
@@ -117,12 +119,16 @@ GitHub: https://github.com/kjt7942/cutmoa
 ## 빌드
 
 ```bash
-./gradlew assembleDebug
+./gradlew assembleDebug        # 디버그 APK 빌드
+./gradlew installDebug         # 연결된 기기에 설치
+./gradlew testDebugUnitTest    # 유닛 테스트
 ```
 
-## 개발 기록 (2026-09-04)
+## 개발 기록
 
-프로젝트를 처음부터 구성하며 진행한 작업을 시간 순으로 정리.
+파일 수정 시각과 git 커밋 시각을 근거로 시간 순 정리.
+
+### 2026-09-04 — 최초 구현
 
 1. **19:27 ~ 19:38 — 프로젝트 골격 구성**
    `settings.gradle.kts`, 루트/앱 `build.gradle.kts`, `gradle.properties`, `proguard-rules.pro` 작성. 리소스(`strings.xml`, `colors.xml`, `themes.xml`, 런처 아이콘) 추가.
@@ -140,21 +146,25 @@ GitHub: https://github.com/kjt7942/cutmoa
    `.gitignore` 추가, 전체 소스 최초 커밋, GitHub(`kjt7942/short-video-app`) public 저장소 생성 후 푸시.
 8. **01:53 — README 작성**
    프로젝트 개요, 화면 흐름, 기술 스택 문서화 후 커밋/푸시.
+9. **02:02 ~ 02:34 — README 개발일지 정리**
+   개발 기록, 목적·주요 기능, 저장소 링크, 최초 기획 스크립트 원문, 스크린샷, 트러블슈팅, 향후 계획을 차례로 추가하고 개발일지 템플릿 순서로 재정렬.
 
-### 2026-09-14 — 터치 포커스 추가
+### 2026-09-14 21:36 — 터치 포커스 추가 (`04bf867`)
 
 - `VideoCaptureManager`가 `bindToLifecycle`이 돌려주는 `Camera`를 버리고 있어 `cameraControl` 접근 불가 → 필드로 보관하고 `focusAt(MeteringPoint)` 추가(`FocusMeteringAction`).
 - `CameraScreen`의 `PreviewView`에 터치 리스너를 달아 `meteringPointFactory`로 화면 좌표를 센서 좌표로 변환 후 포커스 요청.
 - 자동 포커스는 CameraX가 `VideoCapture` 바인딩 시 기본으로 연속 비디오 AF를 쓰므로 별도 코드 불필요.
 
-### 2026-09-14 — 수평·각도 가이드 추가
+### 2026-09-14 21:36 ~ 22:49 — 수평·각도 가이드 추가 (`c519f49`)
+
+> 이 섹션부터 "삼성 기본 카메라 스타일로 UI 다듬기"까지 세 작업은 기기 확인을 마친 뒤 한 커밋으로 묶어 올림.
 
 - 삼성 기본 카메라의 수평 가이드를 참고해 `LevelGuide.kt` 작성. 라이브러리 없이 `SensorManager`(`TYPE_GRAVITY`, 없으면 가속도계 + 로우패스 필터)만 사용.
 - 좌우 기울기(roll) = `atan2(gx, gy)`, 위아래 각도(pitch) = `asin(-gz / |g|)`. 앱이 세로 고정이라 기기 좌표계를 그대로 화면 좌표로 쓸 수 있음.
 - 가로로 들고 찍는 경우도 있어 가장 가까운 90° 기준으로 수평 판정. pitch가 ±70°를 넘으면 roll이 의미 없어지므로 위에서 내려다보는 촬영용 버블 가이드로 전환.
 - 센서 값을 Compose `Canvas`의 draw 단계에서만 읽어, 초당 수십 번 값이 바뀌어도 리컴포지션 없이 다시 그리기만 발생.
 
-### 2026-09-14 — 추적 AF(트래킹 포커스) 추가
+### 2026-09-14 21:36 ~ 22:49 — 추적 AF(트래킹 포커스) 추가 (`c519f49`)
 
 - 요청: "터치한 사물을 계속해서 포커스를 유지하도록 하고싶어. 포커스 유지하는 동안 해당 사물을 추적하면서 표시하고, 해제하려면 다른곳에 한번 터치하면 해제되는 식으로" (기본 카메라 앱의 추적 AF).
 - 추적 엔진 선택: ML Kit 객체 감지(눈에 띄는 사물만 감지, APK 증가) vs 직접 구현한 템플릿 매칭(아무 사물이나 가능, 빠른 움직임·크기 변화에 약함) 중 **템플릿 매칭** 선택 — 의존성 없이 벽 무늬·물체 일부 등 어떤 영역이든 잡을 수 있어서.
@@ -163,20 +173,20 @@ GitHub: https://github.com/kjt7942/cutmoa
 - 초점 유지 방식: 탭 시 `FocusMeteringAction`(`disableAutoCancel`)으로 그 지점에 AF·AE를 트리거하고 고정. 추적 중에는 박스가 화면 폭의 8% 이상 움직였고 직전 요청 후 0.7초가 지났을 때만 새 위치로 다시 트리거. 해제 시 `cancelFocusAndMetering()`으로 연속 AF 복귀. (처음엔 Camera2 Interop으로 AF 영역만 갱신하는 방식이었으나 실제로 초점이 안 옮겨져 교체 — 트러블슈팅 참고)
 - 추적은 분석 스레드, UI·카메라 제어는 메인 스레드. 시작/해제마다 세대(generation) 번호를 올려, 해제 직후 도착한 이전 프레임 결과가 박스를 다시 띄우지 않게 처리.
 
-### 2026-09-14 — 삼성 기본 카메라 스타일로 UI 다듬기 + 추적 박스 좌표 버그 수정
+### 2026-09-14 21:36 ~ 22:49 — 삼성 기본 카메라 스타일로 UI 다듬기 + 추적 박스·초점 버그 수정 (`c519f49`)
 
 - 요청: 삼성 기본 카메라 실행 화면 캡처 3장과 함께 "이거랑 비슷하게 구현해줘".
 - 수평 가이드를 캡처 비율대로 재구성: 원형 링 + 링을 가로지르는 수평선(실제 수평을 따라 기울어짐) + 양 끝 고정 눈금 + 링 안의 위아래 각도 사다리와 초록색 각도 표시. 밝은 배경에서도 보이도록 옅은 그림자 테두리 추가.
 - 추적 박스를 얇은 외곽선 + 굵은 둥근 모서리 브래킷 형태로 변경.
 - adb로 앱 실행 → 화면 탭(`input tap`) → `screencap`으로 캡처하며 박스 위치를 직접 검증, 아래 두 버그를 발견해 수정([트러블슈팅](#트러블슈팅--배운-점) 참고).
 
-### 2026-09-14 — 앱 이름 변경: ShortsApp → 컷모아(CutMoa)
+### 2026-09-14 23:00 — 앱 이름 변경: ShortsApp → 컷모아(CutMoa) (`e7e831a`)
 
 - 이름 후보(컷모아 / 숏컷캠 / 컷컷 / 이어캠 / 스냅컷 / 3초컷) 중 "짧은 컷을 모아 한 편으로"라는 앱 흐름이 그대로 드러나는 **컷모아** 선택. "쇼츠(Shorts)"는 유튜브 상표라 스토어 등록을 고려해 이름에서 제외.
 - 패키지 `com.kjt.shortsapp` → `com.kjt.cutmoa`, 테마 `Theme.CutMoa`, 저장 폴더 `Movies/CutMoa`, 파일명 접두어 `CUTMOA_`로 일괄 변경.
 - 저장소도 새 이름으로 분리: 기존 [`short-video-app`](https://github.com/kjt7942/short-video-app)은 그대로 두고, 전체 커밋 이력을 [`cutmoa`](https://github.com/kjt7942/cutmoa)로 옮겨 이어서 개발.
 
-### 2026-09-15 — 앱 아이콘 제작
+### 2026-09-15 00:38 — 앱 아이콘 제작 (`1f88c0a`)
 
 - 방향 3가지(A. 모이는 컷 / B. 뷰파인더 속 컷 / C. 잘린 필름) 중 이름 뜻이 바로 보이는 **A안** 선택. 색은 앱 안에서 이미 쓰는 녹화 버튼 코랄 레드·추적 박스 노랑·어두운 배경에서 가져옴.
 - ChatGPT 이미지 생성에 사용한 프롬프트:
@@ -226,30 +236,34 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 코드에 남긴 근거(주석)를 기준으로 실제 부딪힌 문제와 해결 방식 정리.
 
-- **클립마다 해상도/프레임레이트가 다르면 병합이 깨짐** — 세로 1080p 클립과 가로 720p 클립을 그냥 이어 붙이면 재생이 멈추거나 깨질 수 있어서, `VideoMerger`가 모든 클립을 병합 전에 동일한 `Presentation`(해상도 + fit 모드)으로 강제 통과시키도록 처리(`VideoMerger.kt:28`).
+- **클립마다 해상도/프레임레이트가 다르면 병합이 깨짐** — 세로 1080p 클립과 가로 720p 클립을 그냥 이어 붙이면 재생이 멈추거나 깨질 수 있어서, `VideoMerger`가 모든 클립을 병합 전에 동일한 `Presentation`(해상도 + fit 모드)으로 강제 통과시키도록 처리(`VideoMerger.kt:29`).
 - **Media3 Transformer는 진행률 콜백을 안 줌** — push 방식 콜백이 없고 polling으로만 진행 상태를 얻을 수 있어서, `VideoMerger`에서 주기적으로 상태를 poll해 진행률(%)을 계산(`VideoMerger.kt:95`).
 - **WorkManager `Data`는 플랫 값만 전달 가능** — 오버레이 리스트는 아이템마다 키프레임 개수가 다른 가변 구조라 WorkManager로 직접 넘길 수 없음. 별도 직렬화 라이브러리를 추가하는 대신 플랫폼 내장 `org.json`으로 JSON 문자열 하나로 말아서 `OverlayExportWorker`에 전달(`OverlaySerialization.kt:9`).
 - **오버레이 좌표계와 Media3 좌표계가 서로 다름** — 에디터는 화면 기준 fractional 좌상단(0~1, y-down) 좌표를 쓰는데 Media3 오버레이 프레임은 NDC(-1~1, 중심 원점, y-up)라서 그대로 넘기면 텍스트/이모지가 위아래로 뒤집힘. 내보내기 시점에 Y축을 반전해서 변환(`OverlayExporter.kt:135`).
-- **카메라 풀스크린 프리뷰인데 내비게이션 바 뒤에 어두운 스크림이 깔림** — 3버튼 내비게이션 모드에서 시스템이 가독성을 위해 자동으로 scrim을 그려서 카메라 화면이 하단만 어둡게 보임. `isNavigationBarContrastEnforced = false` + 라이트 아이콘 강제로 해제(`CameraScreen.kt:131`).
+- **카메라 풀스크린 프리뷰인데 내비게이션 바 뒤에 어두운 스크림이 깔림** — 3버튼 내비게이션 모드에서 시스템이 가독성을 위해 자동으로 scrim을 그려서 카메라 화면이 하단만 어둡게 보임. `isNavigationBarContrastEnforced = false` + 라이트 아이콘 강제로 해제(`CameraScreen.kt:139`).
 - **오버레이 편집 중 제스처 충돌** — 텍스트/이모지 칩 위의 드래그·핀치와 배경(영상) 줌·팬 제스처가 겹치면 원치 않는 동작이 발생. 선택된 칩만 자기 제스처를 소비하고, 나머지는 배경으로 흘려보내도록 순서를 분리(`OverlayEditorScreen.kt:321`).
-- **추적 박스가 찌그러지고 엉뚱한 곳에 그려짐 (1) 스트림마다 화각이 다름** — 4:3 분석 프레임과 프리뷰가 각자 다른 영역을 잘라 써서 좌표가 맞지 않았음. `ViewPort`(9:16, 녹화 영상 비율)로 모든 스트림의 크롭을 통일(`VideoCaptureManager.kt`).
-- **(2) CameraX `ImageProxyTransformFactory` 행렬이 축이 뒤바뀐 채 나옴** — 로그로 행렬을 찍어보니 640×480(회전 90°, 크롭 y 60~420) 버퍼를 360×640짜리처럼 매핑하고 있었고, 정사각형 박스가 1:3으로 늘어난 원인과 수치가 정확히 일치. 회전값·크롭 영역으로 직접 변환하는 `BufferMapping`으로 교체하고, 기기에서 찍은 실제 값으로 유닛 테스트 작성(`BufferMappingTest`).
-- **어두운 화면에서 추적 박스가 혼자 떠돌아다님** — 렌즈가 가려진 상태처럼 무늬가 없으면 모든 후보 위치의 점수가 비슷하고, 센서 노이즈 때문에 매 프레임 "조금 더 나은" 위치가 생겨 박스가 랜덤하게 이동. 현재 위치보다 20% 이상 좋은 매칭일 때만 이동하도록 변경, 노이즈 프레임 테스트로 재현·검증.
+- **타임라인에서 줌과 가로·세로 스크롤이 서로 싸움** — 핀치 줌과 두 방향 스크롤을 각각 다른 제스처 감지기로 받으면 한 동작을 서로 가져가려 충돌. `detectTransformGestures` 하나가 줌 + 양방향 팬을 모두 처리하도록 합쳐, 한 손가락 드래그는 zoom=1로 들어와 그냥 스크롤되게 함(`OverlayTimeline.kt:144`).
+- **촬영 진행 바가 1초 단위로 뚝뚝 끊김** — 초 단위 카운터로 진행률을 올리면 바가 계단식으로 점프. 50ms마다 실제 경과 시간(wall clock)으로 진행률을 계산해 부드럽게 채우고, 같은 루프가 시간이 다 되면 자동 종료까지 담당(`CameraScreen.kt:174`).
+- **추적 박스가 찌그러지고 엉뚱한 곳에 그려짐 (1) 스트림마다 화각이 다름** — 4:3 분석 프레임과 프리뷰가 각자 다른 영역을 잘라 써서 좌표가 맞지 않았음. `ViewPort`(9:16, 녹화 영상 비율)로 모든 스트림의 크롭을 통일(`VideoCaptureManager.kt:128`).
+- **(2) CameraX `ImageProxyTransformFactory` 행렬이 축이 뒤바뀐 채 나옴** — 로그로 행렬을 찍어보니 640×480(회전 90°, 크롭 y 60~420) 버퍼를 360×640짜리처럼 매핑하고 있었고, 정사각형 박스가 1:3으로 늘어난 원인과 수치가 정확히 일치. 회전값·크롭 영역으로 직접 변환하는 `BufferMapping`으로 교체하고, 기기에서 찍은 실제 값으로 유닛 테스트 작성(`VideoCaptureManager.kt:383`, `BufferMappingTest`).
+- **어두운 화면에서 추적 박스가 혼자 떠돌아다님** — 렌즈가 가려진 상태처럼 무늬가 없으면 모든 후보 위치의 점수가 비슷하고, 센서 노이즈 때문에 매 프레임 "조금 더 나은" 위치가 생겨 박스가 랜덤하게 이동. 현재 위치보다 20% 이상 좋은 매칭일 때만 이동하도록 변경, 노이즈 프레임 테스트로 재현·검증(`SubjectTracker.kt:71`, `SubjectTrackerTest.staysPutOnDarkNoisyScene`).
 - **추적 AF에서 터치한 사물로 초점이 안 옮겨짐** — 초점이 흔들리지 않게 하려고 연속 AF 모드는 그대로 두고 Camera2 Interop으로 `CONTROL_AF_REGIONS`만 바꿨는데, 연속 AF는 장면 변화가 없으면 다시 스캔하지 않아서 영역을 바꿔도 렌즈가 움직이지 않았음. `FocusMeteringAction`으로 명시적으로 AF를 트리거하는 방식으로 교체하고, 결과(`isFocusSuccessful`)를 로그로 남겨 검증.
 - **추적 중 초점이 계속 취소됨** — 박스가 움직일 때마다 0.1초 간격으로 새 초점 요청을 보내니 이전 스캔이 끝나기 전에 취소(`superseded`)되는 게 로그에 찍힘. 이동 거리 조건에 최소 0.7초 간격을 추가해 스캔이 끝날 시간을 확보.
 - **알려진 한계 (다음에 손볼 곳)** — 병합 시 오디오 트랙이 없는 갤러리 클립이 섞이면 concat 동기화가 틀어질 수 있음. 지금은 앱이 직접 찍은 클립(항상 오디오 포함)만 가정하고 있고, 갤러리 클립 지원을 넓히려면 `EditedMediaItemSequence.Builder().setForceAudioTrack(true)`로 교체 필요(`VideoMerger.kt:57`).
+- **알려진 한계 — 추적 AF** — 초점 재트리거 조건이 "화면상 이동 거리"라서, 사물이 화면 위치는 그대로인 채 앞뒤로만 움직이면 초점을 다시 잡지 않음(`VideoCaptureManager.kt:291`). 템플릿 매칭 특성상 빠른 움직임·크기 변화·가려짐에 약하고, 놓침 판정 임계값(`lostScore`)은 실기기에서 조정이 필요한 값(`SubjectTracker.kt:21`).
+- **알려진 한계 — 수평 가이드** — 센서 구독이 촬영 화면이 떠 있는 동안 유지돼, 앱이 백그라운드로 가도 계속 동작(`LevelGuide.kt:64`).
 
 ## 향후 계획
 
 - **오디오 트랙 없는 갤러리 클립 대응** — [트러블슈팅](#트러블슈팅--배운-점)에 적어둔 대로, 오디오가 없는 클립이 섞여도 concat이 안 깨지도록 `setForceAudioTrack(true)` 적용
 - **텍스트 스타일 옵션 확대** — 지금은 프리셋 5색만 지원(`OverlayEditorScreen.kt:75`). 폰트/굵기/외곽선(스트로크)/반투명 배경 박스, 커스텀 색상(HSV 피커) 추가
 - **테마 아이콘(Android 13+) 대응** — 단색 `monochrome` 레이어 추가
-- **추적 AF 고도화** — 크기 변화·빠른 움직임 대응(피라미드 탐색, 스케일 추정), 필요 시 ML Kit 객체 감지와 병행
+- **추적 AF 고도화** — 크기 변화·빠른 움직임 대응(피라미드 탐색, 스케일 추정), 앞뒤로만 움직이는 사물을 위한 주기적 재초점, 필요 시 ML Kit 객체 감지와 병행
 - **포커스 UX 보강** — 길게 눌러 AF/AE 고정(lock), 노출 밝기 슬라이더
-- **가이드 옵션** — 수평 가이드 켜기/끄기 토글, 수평이 맞았을 때 짧은 진동
+- **가이드 옵션** — 수평 가이드 켜기/끄기 토글, 수평이 맞았을 때 짧은 진동, 백그라운드 전환 시 센서 해제(`LifecycleResumeEffect`), 3×3 격자선
 - **배경음악(BGM) 삽입** — 병합 영상에 오디오 트랙 추가/믹싱 기능
 - **필터/보정** — 밝기·채도 등 기본 영상 필터, Media3 Effect로 확장
 - **오버레이 템플릿 저장/재사용** — 자주 쓰는 자막·이모지 배치를 템플릿으로 저장했다가 다음 영상에 재사용
 - **되돌리기(Undo/Redo)** — 오버레이 편집 중 실수 복구
-- **자동 테스트 추가** — 현재 테스트 코드 없음. `OverlayItem.poseAt` 보간 로직, `VideoMerger` 사양 통일 로직처럼 핵심 로직부터 유닛 테스트 작성
-- **배포 준비** — 릴리즈 서명, 앱 아이콘 다듬기, Play Console 등록
+- **자동 테스트 확대** — 지금은 추적 로직(`SubjectTrackerTest`)과 좌표 변환(`BufferMappingTest`) 5개뿐. `OverlayItem.poseAt` 보간 로직, `VideoMerger` 사양 통일 로직까지 넓히기
+- **배포 준비** — 릴리즈 서명, 스토어용 스크린샷·설명 작성, Play Console 등록

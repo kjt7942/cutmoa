@@ -108,7 +108,7 @@ class VideoCaptureManager(private val context: Context) {
                     .build()
                 videoCapture = capture
 
-                // Small 4:3 stream so the buffer spans the full sensor (AF region math relies on it).
+                // Small 4:3 stream: plenty for template tracking, cheap to scan every frame.
                 val analysis = ImageAnalysis.Builder()
                     .setResolutionSelector(
                         ResolutionSelector.Builder()
