@@ -1,9 +1,7 @@
 package com.kjt.cutmoa.camera
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
-import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -71,11 +69,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
+import com.kjt.cutmoa.util.LightSystemBarIcons
 import kotlin.math.roundToInt
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -117,17 +114,10 @@ private fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
     }
 }
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is android.content.ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
 @Composable
 private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val view = LocalView.current
 
     val captureManager = remember { VideoCaptureManager(context) }
     var isRecording by remember { mutableStateOf(false) }
@@ -136,36 +126,8 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
     var recordingProgress by remember { mutableFloatStateOf(0f) }
     var customDurations by remember { mutableStateOf(DurationPrefs.load(context)) }
 
-    // Camera preview should fill the whole screen like a native camera app — including
-    // behind the 3-button nav bar. enableEdgeToEdge() already draws content there, but the
-    // system still paints a dimming scrim behind button-mode nav bars for legibility by
-    // default; drop that here and use light (white) bar icons over the live feed.
-    DisposableEffect(view) {
-        val activity = view.context.findActivity()
-        val window = activity?.window
-        val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-        val previousLightNavIcons = insetsController?.isAppearanceLightNavigationBars
-        val previousLightStatusIcons = insetsController?.isAppearanceLightStatusBars
-
-        if (window != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-                window.isStatusBarContrastEnforced = false
-            }
-            window.navigationBarColor = AndroidColor.TRANSPARENT
-        }
-        insetsController?.isAppearanceLightNavigationBars = false
-        insetsController?.isAppearanceLightStatusBars = false
-
-        onDispose {
-            if (window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = true
-                window.isStatusBarContrastEnforced = true
-            }
-            previousLightNavIcons?.let { insetsController?.isAppearanceLightNavigationBars = it }
-            previousLightStatusIcons?.let { insetsController?.isAppearanceLightStatusBars = it }
-        }
-    }
+    // Camera preview fills the whole screen like a native camera app, including behind the nav bar.
+    LightSystemBarIcons()
 
     DisposableEffect(Unit) {
         onDispose { captureManager.release() }

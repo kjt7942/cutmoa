@@ -3,31 +3,37 @@ package com.kjt.cutmoa.result
 import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.kjt.cutmoa.util.LightSystemBarIcons
+
+// Gray, not translucent black: the pills straddle the black letterbox and the video, and
+// black-on-black made their top half vanish.
+private val PILL_COLOR = Color(0xFF3A3A3A).copy(alpha = 0.75f)
 
 @Composable
 fun ResultScreen(finalVideoUri: String, onRestart: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text("완성! 갤러리에 저장됨", style = MaterialTheme.typography.headlineSmall)
+    LightSystemBarIcons()
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // Platform VideoView: plays the MediaStore content:// URI without adding an ExoPlayer dependency.
         AndroidView(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
             factory = { context ->
                 VideoView(context).apply {
                     setMediaController(MediaController(context))
@@ -40,6 +46,30 @@ fun ResultScreen(finalVideoUri: String, onRestart: () -> Unit) {
             },
             onRelease = { it.stopPlayback() },
         )
-        Button(onClick = onRestart) { Text("새로 촬영하기") }
+
+        // Top row, not bottom: MediaController's seek bar pops up along the bottom edge.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .statusBarsPadding()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "완성! 갤러리에 저장됨",
+                color = Color.White,
+                modifier = Modifier
+                    .background(PILL_COLOR, RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+            TextButton(
+                onClick = onRestart,
+                modifier = Modifier.background(PILL_COLOR, RoundedCornerShape(50)),
+            ) {
+                Text("새로 촬영하기", color = Color.White)
+            }
+        }
     }
 }
