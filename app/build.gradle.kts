@@ -71,6 +71,8 @@ dependencies {
     implementation("androidx.media3:media3-transformer:$media3Version")
     implementation("androidx.media3:media3-effect:$media3Version")
     implementation("androidx.media3:media3-common:$media3Version")
+    // Editor preview playback (already pulled in by media3-transformer; declared since we use it directly)
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
 
     // Runtime permission handling in Compose
     implementation("com.google.accompanist:accompanist-permissions:0.37.0")

@@ -1,7 +1,6 @@
 package com.kjt.cutmoa.overlay
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Image
+import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -48,25 +51,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.ExoPlayer
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -89,10 +98,44 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
     }
 
     var playheadMs by remember { mutableLongStateOf(0L) }
-    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(playheadMs, mergedVideoPath) {
-        delay(80) // debounce fast scrubbing so we don't decode a frame per pixel of drag
-        previewBitmap = withContext(Dispatchers.IO) { VideoFrameUtil.frameAt(mergedVideoPath, playheadMs) }
+
+    // The player is the preview: paused, it shows the frame at the last seek; playing, it
+    // drives playheadMs so the timeline and overlay poses follow the video.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val player = remember { ExoPlayer.Builder(context).build() }
+    var isPlaying by remember { mutableStateOf(false) }
+    var videoAspect by remember { mutableFloatStateOf(9f / 16f) }
+    DisposableEffect(Unit) {
+        player.setMediaItem(MediaItem.fromUri(mergedVideoPath))
+        player.prepare()
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+            }
+
+            override fun onVideoSizeChanged(size: VideoSize) {
+                if (size.height > 0) videoAspect = size.width * size.pixelWidthHeightRatio / size.height
+            }
+        }
+        player.addListener(listener)
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) player.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            player.release()
+        }
+    }
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) withFrameMillis { playheadMs = player.currentPosition }
+        playheadMs = player.currentPosition
+    }
+
+    fun seekTo(ms: Long) {
+        player.pause()
+        player.seekTo(ms)
+        playheadMs = ms
     }
 
     var overlays by remember { mutableStateOf<List<OverlayItem>>(emptyList()) }
@@ -178,20 +221,12 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
                             translationY = canvasPanY,
                         ),
                 ) {
-                    if (previewBitmap != null) {
-                        Image(
-                            bitmap = previewBitmap!!.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                        )
-                    } else {
-                        Text(
-                            "미리보기 로딩 중…",
-                            color = Color.White,
-                            modifier = Modifier.align(Alignment.Center),
-                        )
-                    }
+                    // TextureView, not SurfaceView: it draws inside the view hierarchy, so the
+                    // canvas zoom/pan graphicsLayer above scales the video along with the overlays.
+                    AndroidView(
+                        factory = { TextureView(it).also(player::setVideoTextureView) },
+                        modifier = Modifier.align(Alignment.Center).aspectRatio(videoAspect),
+                    )
 
                     overlays.filter { it.isVisibleAt(playheadMs) }.forEach { item ->
                         key(item.id) {
@@ -204,6 +239,7 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
                                 isSelected = selectedItemId == item.id,
                                 onSelect = { selectedItemId = item.id },
                                 onChange = { x, y, scale ->
+                                    player.pause() // keyframes land at the playhead; don't let it run away mid-drag
                                     overlays = overlays.map {
                                         if (it.id == item.id) it.withKeyframeAt(playheadMs, x, y, scale) else it
                                     }
@@ -225,7 +261,7 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
                 durationMs = durationMs,
                 playheadMs = playheadMs,
                 overlays = overlays,
-                onSeek = { playheadMs = it },
+                onSeek = ::seekTo,
                 onItemChange = { updated -> overlays = overlays.map { if (it.id == updated.id) updated else it } },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -236,7 +272,21 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(onClick = {
+                    if (isPlaying) {
+                        player.pause()
+                    } else {
+                        if (player.playbackState == Player.STATE_ENDED) player.seekTo(0)
+                        player.play()
+                    }
+                }) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isPlaying) "일시정지" else "재생",
+                    )
+                }
                 Button(onClick = { showTextDialog = true }) { Text("텍스트 추가") }
             }
 

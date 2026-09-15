@@ -19,19 +19,6 @@ object VideoFrameUtil {
         }
     }
 
-    /** Decodes the frame nearest [timeMs] for the overlay editor's scrubbed preview. */
-    fun frameAt(path: String, timeMs: Long): Bitmap? {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(path)
-            retriever.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-        } catch (t: Throwable) {
-            null
-        } finally {
-            retriever.release()
-        }
-    }
-
     /** Total duration of the video at [path], in milliseconds; 0 if it can't be read. */
     fun durationMs(path: String): Long {
         val retriever = MediaMetadataRetriever()
