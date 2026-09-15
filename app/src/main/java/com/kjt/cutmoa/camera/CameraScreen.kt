@@ -433,20 +433,21 @@ private fun DurationSelector(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
+    // Tight spacing + small icons: 3 fixed + 2 custom chips + add + options must fit a ~411dp
+    // wide phone without the options chip getting clipped.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
     ) {
         (fixedOptions + customOptions).sorted().forEach { seconds ->
             DurationChip(seconds = seconds, selected = seconds == selected, onClick = { onSelect(seconds) })
         }
         FilterChip(
-            modifier = Modifier.padding(horizontal = 4.dp),
             selected = false,
             onClick = { showAddDialog = true },
-            label = { Icon(Icons.Filled.Add, contentDescription = "직접 시간 추가") },
+            label = { Icon(Icons.Filled.Add, contentDescription = "직접 시간 추가", modifier = Modifier.size(18.dp)) },
             colors = FilterChipDefaults.filterChipColors(
                 containerColor = Color.DarkGray,
                 labelColor = Color.White,
@@ -454,10 +455,9 @@ private fun DurationSelector(
             ),
         )
         FilterChip(
-            modifier = Modifier.padding(horizontal = 4.dp),
             selected = false,
             onClick = onOpenOptions,
-            label = { Icon(Icons.Filled.Settings, contentDescription = "촬영 옵션") },
+            label = { Icon(Icons.Filled.Settings, contentDescription = "촬영 옵션", modifier = Modifier.size(18.dp)) },
             colors = FilterChipDefaults.filterChipColors(
                 containerColor = Color.DarkGray,
                 labelColor = Color.White,
@@ -480,7 +480,6 @@ private fun DurationSelector(
 @Composable
 private fun DurationChip(seconds: Int, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
-        modifier = Modifier.padding(horizontal = 4.dp),
         selected = selected,
         onClick = onClick,
         label = { Text("${seconds}초") },
