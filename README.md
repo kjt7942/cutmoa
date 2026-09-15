@@ -89,7 +89,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 - **키프레임 애니메이션** — 레이어마다 여러 시점(keyframe)에 위치·크기를 지정하면 그 사이를 자동 보간(linear interpolation)해서 움직이는 오버레이 구현, 레이어별로 노출 구간(start~end)도 별도 설정 가능
 - **오버레이 타임라인 UI** — 여러 레이어의 노출 구간과 키프레임을 한눈에 보고 편집
 - **최종 내보내기 & 저장** — 오버레이까지 합성한 영상을 내보내기 알림과 함께 렌더링하고 MediaStore(갤러리)에 저장
-- **결과 화면** — 저장된 최종 영상 확인, 처음부터 다시 촬영
+- **결과 화면** — 저장된 최종 영상을 앱 안에서 바로 재생(반복 재생 + 재생 컨트롤), 처음부터 다시 촬영
 
 ## 화면 흐름
 
@@ -98,7 +98,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 - **CameraScreen** — CameraX 기반 구간 녹화(자동 종료), 추적 AF(`SubjectTracker` + `ImageAnalysis`), 수평·각도 가이드(`LevelGuide`)
 - **MergeScreen** — Media3 Transformer로 클립 병합, `MergeWorker`가 백그라운드에서 처리
 - **OverlayEditorScreen** — 병합된 영상 위에 텍스트/스티커 배치, 드래그·스케일 편집, `OverlayExportWorker`로 내보내기
-- **ResultScreen** — 최종 영상 확인 및 미디어스토어 저장
+- **ResultScreen** — 미디어스토어에 저장된 최종 영상을 `VideoView`로 바로 재생
 
 ## 기술 스택
 
@@ -220,6 +220,13 @@ GitHub: https://github.com/kjt7942/cutmoa
 - 카드 3장(28×34, 모서리 5)을 -27° / -12° / 15°로 회전해 부채꼴 배치, 앞 카드가 뒤 카드에 드리우는 반투명 그림자, 둥근 모서리 재생 삼각형(stroke round join). 전체를 adaptive icon 안전 영역(지름 66dp) 안에 배치.
 - 같은 좌표로 SVG를 만들어 헤드리스 Edge로 PNG 렌더링, 108dp 레이어와 원형 마스크 적용 모습을 확인하며 조정(`docs/icon/icon_preview.png`).
 
+### 2026-09-15 23:46 — 결과 화면에서 완성 영상 바로 재생
+
+- 요청: "동영상 병합하고 나서 완성된 동영상을 재생해볼수있으면 좋겠어. 매번 갤러리에 가서 재생하는게 불편해."
+- 기존 결과 화면은 저장된 `content://` URI 문자열만 보여줘서, 결과를 보려면 갤러리 앱으로 이동해야 했음.
+- URI 텍스트 자리를 영상 플레이어로 교체. 새 의존성(ExoPlayer) 없이 안드로이드 기본 `VideoView` + `MediaController`를 Compose `AndroidView`로 감쌈. 화면에 들어오면 자동 재생·반복, 탭하면 재생/일시정지·탐색 컨트롤 표시, 화면을 벗어나면 `stopPlayback()`으로 해제.
+- `:app:compileDebugKotlin` 빌드 통과까지 확인. 실기기 재생 확인은 아직.
+
 ## 스크린샷
 
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 |
@@ -265,5 +272,6 @@ GitHub: https://github.com/kjt7942/cutmoa
 - **필터/보정** — 밝기·채도 등 기본 영상 필터, Media3 Effect로 확장
 - **오버레이 템플릿 저장/재사용** — 자주 쓰는 자막·이모지 배치를 템플릿으로 저장했다가 다음 영상에 재사용
 - **되돌리기(Undo/Redo)** — 오버레이 편집 중 실수 복구
+- **편집 화면 영상 재생** — 오버레이 편집 화면은 아직 재생 위치의 정지 프레임만 보여줌(`OverlayEditorScreen.kt:95`). 결과 화면처럼 병합본을 재생하면서 오버레이 움직임 확인. 되감기·배속까지 필요해지면 `VideoView` 대신 Media3 ExoPlayer 사용
 - **자동 테스트 확대** — 지금은 추적 로직(`SubjectTrackerTest`)과 좌표 변환(`BufferMappingTest`) 5개뿐. `OverlayItem.poseAt` 보간 로직, `VideoMerger` 사양 통일 로직까지 넓히기
 - **배포 준비** — 릴리즈 서명, 스토어용 스크린샷·설명 작성, Play Console 등록
