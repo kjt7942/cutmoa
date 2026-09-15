@@ -88,7 +88,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 - **촬영 옵션 (⚙ 버튼)** — 시간 칩의 + 옆 옵션 버튼에서 3×3 격자선 켜기/끄기, 해상도(4K/1080p/720p/480p), FPS(24/30/60) 선택. 기기가 지원하는 값만 표시하고, FPS는 고른 해상도에서 실제로 낼 수 있는 값만 보여줌(예: Galaxy S25 4K는 24/30). 설정은 앱을 다시 켜도 유지(`CaptureSettings`)
 - **촬영 중 화면 정리** — 녹화 중에는 "병합하러 가기" 버튼을 숨김
 - **여러 클립 이어 찍기 → 한 편으로 병합** — 클립을 여러 번 찍은 뒤 Media3 Transformer로 순서대로 합치기, 프로세스가 죽어도 이어지도록 WorkManager 백그라운드 처리
-- **오버레이 편집 (텍스트/이모지)** — 병합된 영상 위에 레이어를 올리고 화면에서 직접 드래그·크기 조절
+- **오버레이 편집 (텍스트/이모지)** — 병합된 영상 위에 레이어를 올리고 화면에서 직접 드래그·크기 조절. ▶ 버튼으로 병합본을 재생하면 오버레이 움직임이 영상과 함께 재생됨
 - **키프레임 애니메이션** — 레이어마다 여러 시점(keyframe)에 위치·크기를 지정하면 그 사이를 자동 보간(linear interpolation)해서 움직이는 오버레이 구현, 레이어별로 노출 구간(start~end)도 별도 설정 가능
 - **오버레이 타임라인 UI** — 여러 레이어의 노출 구간과 키프레임을 한눈에 보고 편집
 - **최종 내보내기 & 저장** — 오버레이까지 합성한 영상을 내보내기 알림과 함께 렌더링하고 MediaStore(갤러리)에 저장
@@ -106,8 +106,10 @@ GitHub: https://github.com/kjt7942/cutmoa
 ## 기술 스택
 
 - Kotlin, Jetpack Compose (Material3)
-- CameraX 1.4.1 — 영상 촬영, `ImageAnalysis`(추적 AF용 프레임 분석), `ViewPort`(스트림 간 크롭 통일)
+- CameraX 1.4.1 — 영상 촬영, `ImageAnalysis`(추적 AF용 프레임 분석), `ViewPort`(스트림 간 크롭 통일), 해상도·FPS·배율 조회/설정, Camera2 Interop(해상도별 최대 FPS 계산)
 - Media3 Transformer/Effect 1.5.0 — 병합, 오버레이 렌더링
+- Media3 ExoPlayer 1.5.0 — 편집 화면 병합본 재생(Transformer가 이미 포함하던 라이브러리)
+- Android `VideoView` — 결과 화면 재생, 추가 라이브러리 없음
 - Navigation Compose — 화면 전환
 - WorkManager — 프로세스 종료에도 살아남는 백그라운드 병합/내보내기
 - Accompanist Permissions — 런타임 권한 처리
@@ -223,14 +225,14 @@ GitHub: https://github.com/kjt7942/cutmoa
 - 카드 3장(28×34, 모서리 5)을 -27° / -12° / 15°로 회전해 부채꼴 배치, 앞 카드가 뒤 카드에 드리우는 반투명 그림자, 둥근 모서리 재생 삼각형(stroke round join). 전체를 adaptive icon 안전 영역(지름 66dp) 안에 배치.
 - 같은 좌표로 SVG를 만들어 헤드리스 Edge로 PNG 렌더링, 108dp 레이어와 원형 마스크 적용 모습을 확인하며 조정(`docs/icon/icon_preview.png`).
 
-### 2026-09-15 23:46 — 결과 화면에서 완성 영상 바로 재생
+### 2026-09-15 23:46 — 결과 화면에서 완성 영상 바로 재생 (`47d77c2`)
 
 - 요청: "동영상 병합하고 나서 완성된 동영상을 재생해볼수있으면 좋겠어. 매번 갤러리에 가서 재생하는게 불편해."
 - 기존 결과 화면은 저장된 `content://` URI 문자열만 보여줘서, 결과를 보려면 갤러리 앱으로 이동해야 했음.
 - URI 텍스트 자리를 영상 플레이어로 교체. 새 의존성(ExoPlayer) 없이 안드로이드 기본 `VideoView` + `MediaController`를 Compose `AndroidView`로 감쌈. 화면에 들어오면 자동 재생·반복, 탭하면 재생/일시정지·탐색 컨트롤 표시, 화면을 벗어나면 `stopPlayback()`으로 해제.
-- `:app:compileDebugKotlin` 빌드 통과까지 확인. 실기기 재생 확인은 아직.
+- `:app:compileDebugKotlin` 빌드 통과 후 Galaxy S25에 설치해 재생 확인 — 이때 문구·버튼이 시스템 바에 가려지는 문제를 발견해 다음 작업으로 이어짐.
 
-### 2026-09-16 00:04 ~ 00:12 — 결과 화면을 전체 화면 재생으로 변경
+### 2026-09-16 00:04 ~ 00:12 — 결과 화면을 전체 화면 재생으로 변경 (`6c22e74`)
 
 - Galaxy S25(Android 16)에 설치해 보니 상단 문구가 상태바에, 하단 버튼이 내비게이션 바에 가려짐. 요청: "상단 텍스트, 하단 버튼이 제대로 표시되지않고 가려짐. 그냥 영상을 풀화면으로 재생해볼수있게 해도 좋을거같은데! 버튼이 필요하다면 영상 위에 표시해도 되고."
 - 원인: 앱이 `enableEdgeToEdge()`로 시스템 바 뒤까지 그리는데, 다른 화면은 `Scaffold`/`statusBarsPadding`으로 여백을 잡는 반면 결과 화면만 인셋 처리가 없었음.
@@ -238,7 +240,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 - 검은 배경에서 상태바 아이콘이 안 보이는 문제는 촬영 화면에 이미 있던 "시스템 바 아이콘 흰색 + 스크림 제거" 코드를 `util/SystemBars.kt`의 `LightSystemBarIcons()`로 옮겨 두 화면이 같이 쓰도록 함.
 - `adb exec-out screencap`으로 기기 화면을 캡처해 가며 확인: 상태바·재생 컨트롤·버튼 모두 가려지지 않음.
 
-### 2026-09-16 00:21 — 편집 화면에서 병합본 재생
+### 2026-09-16 00:21 — 편집 화면에서 병합본 재생 (`ee8758f`)
 
 - 요청: "편집 화면에서도 병합본 재생되게 해줘"
 - 기존 편집 화면은 `MediaMetadataRetriever`로 재생 위치의 정지 프레임(가장 가까운 키프레임)만 디코딩해 보여줬음.
@@ -247,7 +249,7 @@ GitHub: https://github.com/kjt7942/cutmoa
 - 재생 중 오버레이를 끌면 자동 일시정지(키프레임이 재생선 위치에 찍히므로), 앱이 백그라운드로 가면 일시정지. 쓰지 않게 된 `VideoFrameUtil.frameAt(path, timeMs)` 삭제.
 - 빌드·설치까지 확인. 기기에서 재생 동작 확인은 아직.
 
-### 2026-09-16 00:37 ~ 00:54 — 촬영 옵션(격자선·해상도·FPS), 배율 버튼, 녹화 중 버튼 숨김
+### 2026-09-16 00:37 ~ 00:54 — 촬영 옵션(격자선·해상도·FPS), 배율 버튼, 녹화 중 버튼 숨김 (`4824198`)
 
 - 요청: "영상 촬영할때 옵션을 추가해보자. 우선 3*3 격자 켜고 끌수있게 + 버튼 옆에 옵션버튼 추가하고, 옵션버튼 눌르면 격자선 켬/끔 설정할 수 있게 하자. 동영상 촬영할때 스마트폰에서 지원하는 배율, 해상도, FPS 선택기능도 추가하자." / 작업 중 추가 요청: "영상 촬영중에는 병합하러가기버튼 안보이게 하자."
 - **옵션 다이얼로그** — 시간 칩 + 옆 ⚙ 버튼. 격자선 스위치, 해상도 칩(`Recorder.getVideoCapabilities().getSupportedQualities()`), FPS 칩(`CameraInfo.supportedFrameRateRanges`). 설정은 `CaptureSettings`(SharedPreferences)에 저장. 해상도/FPS를 바꾸면 카메라 use case를 다시 바인딩하도록 `VideoCaptureManager`를 `rebind()` 구조로 정리(Preview도 매니저가 생성).
@@ -261,6 +263,12 @@ GitHub: https://github.com/kjt7942/cutmoa
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 | 결과 (전체 화면 재생) |
 |---|---|---|---|
 | ![촬영](screenshots/01_camera.jpg) | ![클립 병합](screenshots/02_merge.jpg) | ![자막·이모지](screenshots/03_overlay.jpg) | ![결과](screenshots/04_result.jpg) |
+
+### 촬영 옵션 (2026-09-16 추가)
+
+| 격자선 + 배율 버튼 + 옵션(⚙) 버튼 | 촬영 옵션 다이얼로그 |
+|---|---|
+| ![격자선·배율](screenshots/05_camera_zoom_grid.jpg) | ![촬영 옵션](screenshots/06_capture_options.jpg) |
 
 ### 앱 아이콘
 
