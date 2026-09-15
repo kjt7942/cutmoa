@@ -4,14 +4,21 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.CameraCharacteristics
 import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Log
+import android.util.Range
 import android.util.Rational
 import android.util.Size
 import android.view.Surface
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.DynamicRange
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -40,11 +47,13 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 private const val TAG = "VideoCaptureManager"
 private const val TRACK_FRAME_WIDTH = 320
 private const val REFOCUS_MOVE_FRACTION = 0.08f
 private const val REFOCUS_MIN_INTERVAL_MS = 700L
+private val STANDARD_FPS = setOf(24, 30, 60, 120)
 
 /**
  * Owns the CameraX use-case graph (Preview + VideoCapture + ImageAnalysis) for one screen.
@@ -77,77 +86,171 @@ class VideoCaptureManager(private val context: Context) {
 
     private class TrackStart(val x: Float, val y: Float, val generation: Int)
 
-    private val recorder: Recorder by lazy {
-        // SD quality falls back automatically on devices that can't do HD encode.
-        val qualitySelector = QualitySelector.fromOrderedList(
-            listOf(Quality.FHD, Quality.HD, Quality.SD),
-            FallbackStrategy.lowerQualityOrHigherThan(Quality.SD)
-        )
-        Recorder.Builder()
-            .setQualitySelector(qualitySelector)
-            .build()
-    }
+    /** What the back camera offers; filled on bind, drives the options dialog and zoom chips. */
+    val supportedQualities = mutableStateOf<List<Quality>>(emptyList())
+    val supportedFps = mutableStateOf<List<Int>>(emptyList())
+    val zoomRange = mutableStateOf<ClosedFloatingPointRange<Float>?>(null)
+
+    private var lifecycleOwner: LifecycleOwner? = null
+    private var settings = CaptureSettings()
+    private var zoomRatio = 1f
 
     fun bindToLifecycle(
         lifecycleOwner: LifecycleOwner,
-        preview: Preview,
         previewView: PreviewView,
-        cameraSelector: CameraSelector = CameraSelector.DEFAULT_BACK_CAMERA,
+        settings: CaptureSettings,
     ) {
+        this.lifecycleOwner = lifecycleOwner
         this.previewView = previewView
+        this.settings = settings
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener(
             {
-                val provider = providerFuture.get()
-                cameraProvider = provider
-
-                // Electronic video stabilization — CameraX no-ops this quietly on
-                // devices/cameras that don't support it, so it's safe to always request.
-                val capture = VideoCapture.Builder(recorder)
-                    .setVideoStabilizationEnabled(true)
-                    .build()
-                videoCapture = capture
-
-                // Small 4:3 stream: plenty for template tracking, cheap to scan every frame.
-                val analysis = ImageAnalysis.Builder()
-                    .setResolutionSelector(
-                        ResolutionSelector.Builder()
-                            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                            .setResolutionStrategy(
-                                ResolutionStrategy(
-                                    Size(640, 480),
-                                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
-                                )
-                            )
-                            .build()
-                    )
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { it.setAnalyzer(analysisExecutor, ::analyzeFrame) }
-
-                // Shared 9:16 viewport (the recorded video's shape) gives every stream the same
-                // crop, so analysis crop rect and PreviewView's normalized space describe the same
-                // field of view. Without it the 4:3 analysis frame and preview crop disagree.
-                // Surface.ROTATION_0 because the activity is locked to portrait.
-                val viewPort = ViewPort.Builder(Rational(9, 16), Surface.ROTATION_0).build()
-                fun group(vararg useCases: UseCase) = UseCaseGroup.Builder()
-                    .setViewPort(viewPort)
-                    .apply { useCases.forEach(::addUseCase) }
-                    .build()
-
-                provider.unbindAll()
-                camera = try {
-                    provider.bindToLifecycle(lifecycleOwner, cameraSelector, group(preview, capture, analysis))
-                } catch (e: IllegalArgumentException) {
-                    // Some devices can't run a third stream next to stabilized preview + video.
-                    // Taps then fall back to one-shot focus.
-                    Log.w(TAG, "ImageAnalysis unsupported alongside preview+video, tracking AF off", e)
-                    provider.unbindAll()
-                    provider.bindToLifecycle(lifecycleOwner, cameraSelector, group(preview, capture))
-                }
+                cameraProvider = providerFuture.get()
+                rebind()
             },
             mainExecutor
         )
+    }
+
+    /** Resolution/FPS changes need a fresh use-case graph; a grid-only change doesn't. */
+    fun updateSettings(newSettings: CaptureSettings) {
+        val needsRebind = newSettings.quality != settings.quality || newSettings.fps != settings.fps
+        settings = newSettings
+        if (needsRebind) rebind()
+    }
+
+    fun setZoom(ratio: Float) {
+        zoomRatio = ratio
+        camera?.cameraControl?.setZoomRatio(ratio)
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun rebind() {
+        val provider = cameraProvider ?: return
+        val owner = lifecycleOwner ?: return
+        val view = previewView ?: return
+        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        val info = provider.getCameraInfo(selector)
+        supportedQualities.value = Recorder.getVideoCapabilities(info)
+            .getSupportedQualities(DynamicRange.SDR)
+            .filter { it in QUALITY_LABELS }
+        // The sensor's fps ranges aren't per size: a Galaxy S25 lists [60, 60] but its 4K stream
+        // tops out at 30, so cap by the chosen quality's own minimum frame duration.
+        val videoSize = QualitySelector.getResolution(info, settings.quality)
+        val minFrameNs = videoSize?.let {
+            Camera2CameraInfo.from(info)
+                .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                ?.getOutputMinFrameDuration(SurfaceTexture::class.java, it)
+        } ?: 0L
+        val maxFps = if (minFrameNs > 0) (1_000_000_000.0 / minFrameNs).roundToInt() else Int.MAX_VALUE
+        // Fixed ranges only, and only the usual video rates: e.g. a Galaxy S25 also lists [26, 26],
+        // [27, 27] and [53, 53], which nobody picks on purpose.
+        supportedFps.value = info.supportedFrameRateRanges
+            .filter { it.lower == it.upper && it.upper in STANDARD_FPS && it.upper <= maxFps }
+            .map { it.upper }
+            .distinct()
+            .sorted()
+        Log.d(TAG, "qualities=${supportedQualities.value} videoSize=$videoSize maxFps=$maxFps fps=${supportedFps.value}")
+
+        // Analysis buffer size/crop can change with the new stream configuration.
+        stopTracking()
+        bufferMapping = null
+
+        // Small 4:3 stream: plenty for template tracking, cheap to scan every frame.
+        val analysis = ImageAnalysis.Builder()
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(
+                        ResolutionStrategy(
+                            Size(640, 480),
+                            ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                        )
+                    )
+                    .build()
+            )
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also { it.setAnalyzer(analysisExecutor, ::analyzeFrame) }
+
+        // Shared 9:16 viewport (the recorded video's shape) gives every stream the same
+        // crop, so analysis crop rect and PreviewView's normalized space describe the same
+        // field of view. Without it the 4:3 analysis frame and preview crop disagree.
+        // Surface.ROTATION_0 because the activity is locked to portrait.
+        val viewPort = ViewPort.Builder(Rational(9, 16), Surface.ROTATION_0).build()
+        fun group(vararg useCases: UseCase) = UseCaseGroup.Builder()
+            .setViewPort(viewPort)
+            .apply { useCases.forEach(::addUseCase) }
+            .build()
+
+        fun capture(fps: Int?, exactQuality: Boolean): VideoCapture<Recorder> {
+            val qualitySelector = if (exactQuality) {
+                QualitySelector.from(settings.quality)
+            } else {
+                QualitySelector.from(settings.quality, FallbackStrategy.lowerQualityOrHigherThan(Quality.SD))
+            }
+            val recorder = Recorder.Builder().setQualitySelector(qualitySelector).build()
+            // Electronic video stabilization — CameraX no-ops this quietly on
+            // devices/cameras that don't support it, so it's safe to always request.
+            return VideoCapture.Builder(recorder)
+                .setVideoStabilizationEnabled(fps == null)
+                .apply { if (fps != null) setTargetFrameRate(Range(fps, fps)) }
+                .build()
+        }
+
+        // A picked frame rate turns stabilization off too: with it on, Galaxy S25 at 4K drops a
+        // 24 fps target the same silent way (1080p/60 happens to survive, but don't rely on it).
+        fun preview(fps: Int?) = Preview.Builder()
+            .setPreviewStabilizationEnabled(fps == null)
+            .build()
+            .also { it.surfaceProvider = view.surfaceProvider }
+
+        // ponytail: 30 leaves the frame rate to the camera (may dip in low light) as before
+        // this option existed; pin Range(30, 30) if merged clips need a constant rate.
+        val targetFps = settings.fps.takeIf { it != DEFAULT_FPS && it in supportedFps.value }
+        // The chosen quality must be exact first: with a fallback allowed, CameraX quietly
+        // squeezes preview + video into one shared stream next to the analysis stream and
+        // records far below it (Galaxy S25: 720p instead of 4K/1080p). So the picked
+        // resolution + frame rate win over tracking AF (taps then fall back to one-shot
+        // focus), and only if the camera can't do them at all does quality fall back.
+        // A picked frame rate also skips the analysis stream: bound next to it, CameraX binds
+        // without error but drops the target rate (StreamSpec expectedFrameRateRange=[0, 0],
+        // clips come out at 30).
+        data class Attempt(val fps: Int?, val exactQuality: Boolean, val withAnalysis: Boolean)
+        val attempts = listOfNotNull(
+            Attempt(null, exactQuality = true, withAnalysis = true).takeIf { targetFps == null },
+            Attempt(targetFps, exactQuality = true, withAnalysis = false),
+            targetFps?.let { Attempt(null, exactQuality = true, withAnalysis = false) },
+            Attempt(null, exactQuality = false, withAnalysis = true),
+            Attempt(null, exactQuality = false, withAnalysis = false),
+        )
+        camera = null
+        videoCapture = null
+        for (attempt in attempts) {
+            val capture = capture(attempt.fps, attempt.exactQuality)
+            val preview = preview(attempt.fps)
+            try {
+                provider.unbindAll()
+                camera = provider.bindToLifecycle(
+                    owner, selector,
+                    if (attempt.withAnalysis) group(preview, capture, analysis) else group(preview, capture),
+                )
+                videoCapture = capture
+                Log.i(TAG, "bound quality=${QUALITY_LABELS[settings.quality]} $attempt")
+                break
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "bind failed $attempt: ${e.message}")
+            }
+        }
+
+        camera?.let { cam ->
+            zoomRange.value = cam.cameraInfo.zoomState.value?.let { it.minZoomRatio..it.maxZoomRatio }
+            Log.d(TAG, "zoomRange=${zoomRange.value}")
+            zoomRange.value?.let { zoomRatio = zoomRatio.coerceIn(it) }
+            cam.cameraControl.setZoomRatio(zoomRatio)
+        }
     }
 
     /**

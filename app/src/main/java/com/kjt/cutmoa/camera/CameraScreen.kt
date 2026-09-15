@@ -9,11 +9,12 @@ import android.os.VibratorManager
 import android.view.Gravity
 import android.view.MotionEvent
 import android.widget.Toast
-import androidx.camera.core.Preview
+import androidx.camera.video.Quality
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,6 +46,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,8 +74,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kjt.cutmoa.util.LightSystemBarIcons
+import java.util.Locale
 import kotlin.math.roundToInt
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -125,6 +130,9 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
     var remainingSeconds by remember { mutableIntStateOf(selectedDuration) }
     var recordingProgress by remember { mutableFloatStateOf(0f) }
     var customDurations by remember { mutableStateOf(DurationPrefs.load(context)) }
+    var settings by remember { mutableStateOf(CaptureSettings.load(context)) }
+    var showOptions by remember { mutableStateOf(false) }
+    var zoom by remember { mutableFloatStateOf(1f) }
 
     // Camera preview fills the whole screen like a native camera app, including behind the nav bar.
     LightSystemBarIcons()
@@ -170,14 +178,23 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                     }
                     true
                 }
-                val preview = Preview.Builder()
-                    .setPreviewStabilizationEnabled(true)
-                    .build()
-                    .also { it.surfaceProvider = previewView.surfaceProvider }
-                captureManager.bindToLifecycle(lifecycleOwner, preview, previewView)
+                captureManager.bindToLifecycle(lifecycleOwner, previewView, settings)
                 previewView
             }
         )
+
+        if (settings.showGrid) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val color = Color.White.copy(alpha = 0.5f)
+                val stroke = 1.dp.toPx()
+                for (i in 1..2) {
+                    val x = size.width * i / 3
+                    val y = size.height * i / 3
+                    drawLine(color, Offset(x, 0f), Offset(x, size.height), stroke)
+                    drawLine(color, Offset(0f, y), Offset(size.width, y), stroke)
+                }
+            }
+        }
 
         LevelGuide(modifier = Modifier.fillMaxSize())
 
@@ -209,17 +226,6 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
             }
         }
 
-        TextButton(
-            onClick = onNavigateToMerge,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .statusBarsPadding()
-                .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50)),
-        ) {
-            Text("병합하러 가기 →", color = Color.White)
-        }
-
         if (isRecording) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -247,6 +253,17 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                         ),
                 )
             }
+        } else {
+            TextButton(
+                onClick = onNavigateToMerge,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(16.dp)
+                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50)),
+            ) {
+                Text("병합하러 가기 →", color = Color.White)
+            }
         }
 
         Column(
@@ -256,6 +273,14 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            captureManager.zoomRange.value?.let { range ->
+                ZoomSelector(
+                    range = range,
+                    selected = zoom,
+                    onSelect = { zoom = it; captureManager.setZoom(it) },
+                )
+            }
+
             if (isRecording) {
                 Text(
                     text = "${remainingSeconds}s",
@@ -276,6 +301,7 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                         DurationPrefs.save(context, updated)
                         selectedDuration = seconds
                     },
+                    onOpenOptions = { showOptions = true },
                 )
             }
 
@@ -295,6 +321,105 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
             )
         }
     }
+
+    if (showOptions) {
+        CaptureOptionsDialog(
+            settings = settings,
+            qualities = captureManager.supportedQualities.value,
+            fpsOptions = captureManager.supportedFps.value,
+            onChange = { updated ->
+                settings = updated
+                CaptureSettings.save(context, updated)
+                captureManager.updateSettings(updated)
+            },
+            onDismiss = { showOptions = false },
+        )
+    }
+}
+
+private val ZOOM_PRESETS = listOf(1f, 2f, 3f, 5f, 10f)
+
+/** Samsung Camera style lens buttons: the widest ratio the camera allows plus fixed steps within range. */
+@Composable
+private fun ZoomSelector(
+    range: ClosedFloatingPointRange<Float>,
+    selected: Float,
+    onSelect: (Float) -> Unit,
+) {
+    val presets = (listOf(range.start) + ZOOM_PRESETS).filter { it in range }.distinct()
+    Row(
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        presets.forEach { ratio ->
+            val isSelected = ratio == selected
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (isSelected) Color.White.copy(alpha = 0.25f) else Color.Transparent)
+                    .clickable { onSelect(ratio) },
+                contentAlignment = Alignment.Center,
+            ) {
+                val label = if (ratio == ratio.toInt().toFloat()) ratio.toInt().toString() else String.format(Locale.US, "%.1f", ratio)
+                Text(
+                    text = if (isSelected) "${label}x" else label,
+                    color = if (isSelected) Color(0xFFFFC928) else Color.White,
+                    fontSize = 13.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureOptionsDialog(
+    settings: CaptureSettings,
+    qualities: List<Quality>,
+    fpsOptions: List<Int>,
+    onChange: (CaptureSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("촬영 옵션") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("3×3 격자선", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = settings.showGrid,
+                        onCheckedChange = { onChange(settings.copy(showGrid = it)) },
+                    )
+                }
+                Text("해상도", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    qualities.forEach { quality ->
+                        FilterChip(
+                            selected = quality == settings.quality,
+                            onClick = { onChange(settings.copy(quality = quality)) },
+                            label = { Text(QUALITY_LABELS.getValue(quality)) },
+                        )
+                    }
+                }
+                Text("FPS", style = MaterialTheme.typography.labelLarge)
+                // A saved rate this camera doesn't list records at the default, so show that.
+                val effectiveFps = settings.fps.takeIf { it in fpsOptions } ?: DEFAULT_FPS
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    fpsOptions.forEach { fps ->
+                        FilterChip(
+                            selected = fps == effectiveFps,
+                            onClick = { onChange(settings.copy(fps = fps)) },
+                            label = { Text("$fps") },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 @Composable
@@ -304,6 +429,7 @@ private fun DurationSelector(
     selected: Int,
     onSelect: (Int) -> Unit,
     onAddCustom: (Int) -> Unit,
+    onOpenOptions: () -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
@@ -321,6 +447,17 @@ private fun DurationSelector(
             selected = false,
             onClick = { showAddDialog = true },
             label = { Icon(Icons.Filled.Add, contentDescription = "직접 시간 추가") },
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = Color.DarkGray,
+                labelColor = Color.White,
+                iconColor = Color.White,
+            ),
+        )
+        FilterChip(
+            modifier = Modifier.padding(horizontal = 4.dp),
+            selected = false,
+            onClick = onOpenOptions,
+            label = { Icon(Icons.Filled.Settings, contentDescription = "촬영 옵션") },
             colors = FilterChipDefaults.filterChipColors(
                 containerColor = Color.DarkGray,
                 labelColor = Color.White,
