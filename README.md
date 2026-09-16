@@ -4,6 +4,10 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 짧은 컷을 모아 한 편으로. 여러 클립 촬영 → 병합 → 오버레이(텍스트/스티커) 편집 → 내보내기까지 지원하는 Android 숏폼 비디오 앱.
 
+## 다운로드
+
+[GitHub Releases](https://github.com/kjt7942/cutmoa/releases/latest)에서 최신 APK(`CutMoa-v*.apk`)를 받아 설치. Android 8.0(API 26) 이상. Play 스토어 밖에서 받은 앱이라 설치할 때 "출처를 알 수 없는 앱" 허용이 필요하고, Play 프로텍트 경고가 뜰 수 있음.
+
 ## 목적
 
 카메라 앱을 켜지 않고도, 이 앱 하나로 "여러 개 짧은 클립을 찍고 → 이어 붙이고 → 텍스트/이모지를 원하는 시점·위치에 넣고 → 갤러리에 저장"까지 끝내는 숏폼 제작 도구를 만드는 것이 목표. 편집 프로그램을 따로 켜지 않아도 되는 원스톱 흐름에 집중.
@@ -359,6 +363,13 @@ RELEASE_KEY_PASSWORD=...
   - 움직임을 켤 때 시작·끝 키프레임을 같이 만들었더니, 중간에서 옮기면 끝에서 제자리로 돌아감 → 현재 위치에 키프레임 하나만 만들고 마지막 이후엔 머물게(`animated` 플래그).
   - 편집 중 뒤로 가기 한 번에 모든 레이어가 확인 없이 사라짐 → 확인창.
 - 알려진 점: 에뮬레이터에서는 편집 화면에 처음 들어왔을 때 멈춘 영상이 검게 보이고 타임라인을 한 번 끌면 나타남(디코더 로그 `fetchGraphicBlock failed`). 같은 `TextureView` 방식을 쓰던 이전 버전이 실제 폰에선 바로 보였기 때문에 에뮬레이터 문제로 판단. → 21:52 Galaxy S25에 release 빌드 설치 후 확인: 첫 진입부터 영상이 바로 보임(에뮬레이터 한정 현상).
+
+### 2026-09-16 23:00 — 첫 릴리스 v1.0 (GitHub Releases)
+
+- 요청: "apk파일 배포는 어떻게 할 수 있어?" → "GitHub Releases에 올려줘"
+- 배포 방법 비교: 파일 직접 전달 / GitHub Releases / Firebase App Distribution / Google Play(AAB, 등록비·비공개 테스트 필요). 공개 저장소라 링크만으로 받을 수 있고 포트폴리오 링크로도 쓰기 좋은 GitHub Releases를 선택.
+- 이전 빌드 결과를 지우고 release APK를 새로 빌드, `apksigner verify`로 서명(`CN=kjt7942, O=CutMoa, C=KR`), `aapt2 dump badging`으로 패키지·버전(versionCode 1 / versionName 1.0) 확인 후 `gh release create`로 업로드. 릴리스 노트에 SHA-256 기재.
+- 다음 버전부터는 `versionCode`를 올리고 같은 키스토어로 서명해야 기존 설치본 위에 업데이트됨.
 
 ## 스크린샷
 
