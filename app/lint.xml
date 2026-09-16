@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!--
+      Media3 Transformer/Effect are used throughout merge/overlay export by design (see
+      VideoMerger, OverlayExporter). The per-declaration @OptIn(UnstableApi::class) pattern
+      Google recommends trips this exact lint check as a false positive on the annotation's
+      own class-literal reference (AGP 8.7.2 + media3 1.5.0), so opt-in is declared here
+      project-wide instead.
+    -->
+    <issue id="UnsafeOptInUsageError">
+        <option name="opt-in" value="androidx.media3.common.util.UnstableApi" />
+    </issue>
+</lint>

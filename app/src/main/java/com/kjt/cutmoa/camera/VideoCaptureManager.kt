@@ -1,5 +1,11 @@
+@file:OptIn(
+    androidx.camera.core.ExperimentalCameraInfo::class,
+    androidx.camera.view.TransformExperimental::class,
+)
+
 package com.kjt.cutmoa.camera
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Matrix
@@ -257,6 +263,9 @@ class VideoCaptureManager(private val context: Context) {
      * Tap on the preview: locks focus onto the tapped subject and keeps following it.
      * Tapping the tracked subject again keeps the lock; tapping anywhere else releases it.
      */
+    // getMatrix is restricted to camera-view internals, but there's no public alternative
+    // that exposes the raw transform BufferMapping needs (see its own doc comment).
+    @SuppressLint("RestrictedApi")
     fun onPreviewTap(x: Float, y: Float) {
         trackedBox.value?.let { box ->
             if (!box.contains(x, y)) stopTracking()
@@ -370,6 +379,7 @@ class VideoCaptureManager(private val context: Context) {
         return frame
     }
 
+    @SuppressLint("RestrictedApi")
     private fun onTrackResult(generation: Int, box: RectF?) {
         if (generation != trackingGeneration) return
         if (box == null) {

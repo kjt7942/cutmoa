@@ -2,10 +2,13 @@ package com.kjt.cutmoa.camera
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.widget.Toast
@@ -57,6 +60,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,7 +84,9 @@ import com.kjt.cutmoa.util.LightSystemBarIcons
 import java.util.Locale
 import kotlin.math.roundToInt
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.delay
 
 private val REQUIRED_PERMISSIONS = listOf(
@@ -100,22 +106,49 @@ fun CameraScreen(onNavigateToMerge: () -> Unit) {
     if (permissionState.allPermissionsGranted) {
         RecordingScreen(onNavigateToMerge = onNavigateToMerge)
     } else {
+        // shouldShowRationale is false both before the first ask and after a permanent
+        // "don't ask again" denial, so the two are only distinguishable by whether this
+        // screen has already triggered one request this session.
+        var hasRequestedOnce by rememberSaveable { mutableStateOf(false) }
+        val permanentlyDenied = hasRequestedOnce &&
+            permissionState.permissions.any { !it.status.isGranted && !it.status.shouldShowRationale }
         PermissionRequestScreen(
-            onRequestPermissions = { permissionState.launchMultiplePermissionRequest() }
+            permanentlyDenied = permanentlyDenied,
+            onRequestPermissions = {
+                hasRequestedOnce = true
+                permissionState.launchMultiplePermissionRequest()
+            },
         )
     }
 }
 
 @Composable
-private fun PermissionRequestScreen(onRequestPermissions: () -> Unit) {
+private fun PermissionRequestScreen(permanentlyDenied: Boolean, onRequestPermissions: () -> Unit) {
+    val context = LocalContext.current
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Button(onClick = onRequestPermissions) {
-            Text("카메라 · 마이크 권한 허용")
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (permanentlyDenied) {
+                Text("설정에서 카메라 · 마이크 권한을 허용해야 촬영할 수 있어요")
+                Button(onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                    )
+                }) {
+                    Text("설정으로 이동")
+                }
+            } else {
+                Button(onClick = onRequestPermissions) {
+                    Text("카메라 · 마이크 권한 허용")
+                }
+            }
         }
     }
-    DisposableEffect(Unit) {
-        onRequestPermissions()
-        onDispose { }
+    // Only ask automatically the first time; once denied, wait for the user to tap the button
+    // (auto-relaunching on every recomposition is what makes a permanent denial feel stuck).
+    LaunchedEffect(Unit) {
+        if (!permanentlyDenied) onRequestPermissions()
     }
 }
 
@@ -569,7 +602,7 @@ private fun handleRecordEvent(
             "저장 실패 (code=${event.error})"
         } else {
             vibrateLight(context)
-            "저장 완료: ${event.outputResults.outputUri}"
+            "저장 완료"
         }
         Toast.makeText(context, message, Toast.LENGTH_SHORT).apply {
             // Default bottom-center placement sits right on top of the duration chips —

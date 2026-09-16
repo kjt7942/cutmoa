@@ -1,5 +1,6 @@
 package com.kjt.cutmoa.result
 
+import android.content.Intent
 import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kjt.cutmoa.util.LightSystemBarIcons
@@ -29,6 +31,7 @@ private val PILL_COLOR = Color(0xFF3A3A3A).copy(alpha = 0.75f)
 @Composable
 fun ResultScreen(finalVideoUri: String, onRestart: () -> Unit) {
     LightSystemBarIcons()
+    val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         // Platform VideoView: plays the MediaStore content:// URI without adding an ExoPlayer dependency.
@@ -64,11 +67,26 @@ fun ResultScreen(finalVideoUri: String, onRestart: () -> Unit) {
                     .background(PILL_COLOR, RoundedCornerShape(50))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
-            TextButton(
-                onClick = onRestart,
-                modifier = Modifier.background(PILL_COLOR, RoundedCornerShape(50)),
-            ) {
-                Text("새로 촬영하기", color = Color.White)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(
+                    onClick = {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "video/mp4"
+                            putExtra(Intent.EXTRA_STREAM, Uri.parse(finalVideoUri))
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, null))
+                    },
+                    modifier = Modifier.background(PILL_COLOR, RoundedCornerShape(50)),
+                ) {
+                    Text("공유", color = Color.White)
+                }
+                TextButton(
+                    onClick = onRestart,
+                    modifier = Modifier.background(PILL_COLOR, RoundedCornerShape(50)),
+                ) {
+                    Text("새로 촬영하기", color = Color.White)
+                }
             }
         }
     }

@@ -66,7 +66,7 @@ fun MergeScreen(onMerged: (String) -> Unit) {
 
     val pickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(20)
-    ) { uris -> if (uris.isNotEmpty()) selectedClips = uris }
+    ) { uris -> if (uris.isNotEmpty()) selectedClips = (selectedClips + uris).distinct() }
 
     val workInfoFlow = remember(activeWorkId) {
         activeWorkId?.let { workManager.getWorkInfoByIdFlow(it) } ?: flowOf(null)
@@ -91,7 +91,7 @@ fun MergeScreen(onMerged: (String) -> Unit) {
                     )
                 }
             ) {
-                Text("촬영본 / 갤러리에서 클립 선택")
+                Text(if (selectedClips.isEmpty()) "촬영본 / 갤러리에서 클립 선택" else "클립 더 추가")
             }
 
             if (selectedClips.isEmpty()) {
