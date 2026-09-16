@@ -131,6 +131,17 @@ GitHub: https://github.com/kjt7942/cutmoa
 ./gradlew assembleDebug        # 디버그 APK 빌드
 ./gradlew installDebug         # 연결된 기기에 설치
 ./gradlew testDebugUnitTest    # 유닛 테스트
+./gradlew assembleRelease      # 서명된 릴리즈 APK (local.properties에 서명 정보 필요)
+./gradlew bundleRelease        # Play 스토어 업로드용 AAB
+```
+
+릴리즈 서명 정보는 git에 올리지 않는 `local.properties`에 둔다. 없으면 릴리즈 빌드는 서명 없이 나온다.
+
+```properties
+RELEASE_STORE_FILE=D:/keys/cutmoa-release.jks
+RELEASE_STORE_PASSWORD=...
+RELEASE_KEY_ALIAS=cutmoa
+RELEASE_KEY_PASSWORD=...
 ```
 
 ## 개발 기록
@@ -299,6 +310,14 @@ GitHub: https://github.com/kjt7942/cutmoa
   - 편집 화면 ▶ 재생 → 1.5초 사이 재생선이 약 1.4초 → 3.4초로 이동
 - 화면 방향은 세로 고정(`screenOrientation="portrait"`)이라 회전 시나리오는 해당 없음.
 
+### 2026-09-16 20:34 ~ 20:36 — 릴리즈 서명 설정
+
+- 요청: "니가 키스토어 만들고 설정까지 해줘"
+- JDK 17의 `keytool`로 키스토어 생성(RSA 2048, 유효기간 10000일, 별칭 `cutmoa`). 저장소 밖(`D:\keys\`)에 두고, 비밀번호는 무작위 24자로 만들어 git에서 제외된 `local.properties`에만 저장.
+- `app/build.gradle.kts`가 `local.properties`에서 서명 정보를 읽어 `release` 빌드에 적용. 서명 정보가 없는 환경(다른 PC, CI)에서도 빌드가 깨지지 않도록 값이 있을 때만 서명 설정을 만듦.
+- 처음에 `java.util.Properties()`를 `android { }` 근처에서 그대로 쓰니 `Unresolved reference: util` — Gradle Kotlin DSL에서 `java`가 Java 플러그인 확장으로 해석됨. 파일 맨 위에 `import java.util.Properties`로 해결.
+- `assembleRelease` 후 `apksigner verify --print-certs`로 `CN=kjt7942, O=CutMoa, C=KR` 서명 확인. 기존 debug 앱은 서명이 달라 덮어쓰기가 안 되므로 삭제 후 release APK 설치.
+
 ## 스크린샷
 
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 | 결과 (전체 화면 재생) |
@@ -365,4 +384,4 @@ GitHub: https://github.com/kjt7942/cutmoa
 - **되돌리기(Undo/Redo)** — 오버레이 편집 중 실수 복구
 - **편집 화면 재생 시간 표시** — 재생 위치 시간 표시(00:03 / 00:11) 추가 검토
 - **자동 테스트 확대** — 지금은 추적 로직(`SubjectTrackerTest`)과 좌표 변환(`BufferMappingTest`) 5개뿐. `OverlayItem.poseAt` 보간 로직, `VideoMerger` 사양 통일 로직까지 넓히기
-- **배포 준비** — 릴리즈 서명, 스토어용 스크린샷·설명 작성, Play Console 등록
+- **배포 준비** — (릴리즈 서명 완료) 스토어용 스크린샷·설명 작성, Play Console 등록
