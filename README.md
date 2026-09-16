@@ -4,6 +4,12 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 짧은 컷을 모아 한 편으로. 여러 클립 촬영 → 병합 → 오버레이(텍스트/스티커) 편집 → 내보내기까지 지원하는 Android 숏폼 비디오 앱.
 
+<p align="center">
+  <img src="docs/promo/cutmoa_promo.jpg" alt="컷모아 홍보 이미지 — 짧은 순간들을 모아, 더 특별한 영상을 만들어요." width="420">
+</p>
+
+<p align="center"><sub>홍보용 이미지(ChatGPT 이미지 생성). 화면 속 앱 UI는 연출이며 실제 화면은 아래 <a href="#스크린샷">스크린샷</a> 참고.</sub></p>
+
 ## 다운로드
 
 [GitHub Releases](https://github.com/kjt7942/cutmoa/releases/latest)에서 최신 APK(`CutMoa-v*.apk`)를 받아 설치. Android 8.0(API 26) 이상. Play 스토어 밖에서 받은 앱이라 설치할 때 "출처를 알 수 없는 앱" 허용이 필요하고, Play 프로텍트 경고가 뜰 수 있음.
@@ -377,6 +383,11 @@ RELEASE_KEY_PASSWORD=...
 - 이전 빌드 결과를 지우고 release APK를 새로 빌드, `apksigner verify`로 서명(`CN=kjt7942, O=CutMoa, C=KR`), `aapt2 dump badging`으로 패키지·버전(versionCode 1 / versionName 1.0) 확인 후 `gh release create`로 업로드. 릴리스 노트에 SHA-256 기재.
 - 다음 버전부터는 `versionCode`를 올리고 같은 키스토어로 서명해야 기존 설치본 위에 업데이트됨.
 - 친구 배포용 안내: 바로 다운로드 링크(`releases/download/v1.0/CutMoa-v1.0.apk`)를 보내고, 카톡 인앱 브라우저에서 안 받아지면 외부 브라우저로 열기 → "출처를 알 수 없는 앱" 허용 → Play 프로텍트 경고는 "무시하고 설치". 안드로이드 8.0 이상만 가능, 아이폰 불가.
+
+### 2026-09-16 23:22 — 홍보 이미지 추가
+
+- ChatGPT 이미지 생성으로 만든 홍보 이미지(1024×1536, 앱 아이콘 + "짧은 순간들을 모아, 더 특별한 영상을 만들어요." 문구, 촬영 → 컷 모으기 흐름 연출)를 `docs/promo/cutmoa_promo.jpg`로 저장(PNG 2.2MB → JPG 약 290KB)하고 README 상단에 배치.
+- 이미지 속 휴대폰 화면은 생성된 연출이라 실제 앱 UI와 다름 — README에 그 점을 적고 실제 화면은 스크린샷 섹션으로 연결.
 
 ## 스크린샷
 
