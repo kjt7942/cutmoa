@@ -81,6 +81,7 @@ fun AppNavHost() {
             OverlayEditorScreen(
                 mergedVideoPath = path,
                 onExported = { finalUri -> navController.navigate(Routes.result(finalUri)) },
+                onBack = { navController.popBackStack() },
             )
         }
 

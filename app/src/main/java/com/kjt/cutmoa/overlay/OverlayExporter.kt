@@ -2,14 +2,11 @@ package com.kjt.cutmoa.overlay
 
 import android.content.Context
 import android.net.Uri
-import android.text.SpannableString
-import android.text.style.AbsoluteSizeSpan
-import android.text.style.ForegroundColorSpan
-import androidx.compose.ui.graphics.toArgb
+import android.graphics.Bitmap
 import androidx.media3.common.MediaItem
+import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
-import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -19,6 +16,7 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.google.common.collect.ImmutableList
+import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,9 +35,6 @@ import kotlin.coroutines.resumeWithException
  */
 object OverlayExporter {
 
-    private const val BASE_TEXT_PX = 64f
-    private const val BASE_EMOJI_PX = 140f
-
     suspend fun export(
         context: Context,
         sourceFile: File,
@@ -47,7 +42,9 @@ object OverlayExporter {
         outputFile: File,
         onProgress: (percent: Int) -> Unit,
     ): File = withContext(Dispatchers.Main) {
-        val textureOverlays: List<TextureOverlay> = overlays.map { it.toTextureOverlay() }
+        // Frame width after rotation is applied — the space Media3's overlay pixels live in.
+        val frameWidth = VideoFrameUtil.displayWidth(sourceFile.absolutePath).takeIf { it > 0 } ?: 1080
+        val textureOverlays: List<TextureOverlay> = overlays.map { KeyframedBitmapOverlay(it, frameWidth) }
 
         val editedItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(sourceFile)))
             .setEffects(
@@ -105,42 +102,37 @@ object OverlayExporter {
         }
     }
 
-    private fun OverlayItem.toTextureOverlay(): TextureOverlay {
-        val basePx = if (kind == OverlayKind.EMOJI) BASE_EMOJI_PX else BASE_TEXT_PX
-        val spannable = SpannableString(text).apply {
-            setSpan(AbsoluteSizeSpan(basePx.toInt()), 0, text.length, 0)
-            if (kind == OverlayKind.TEXT) {
-                setSpan(ForegroundColorSpan(color.toArgb()), 0, text.length, 0)
-            }
-        }
-        return KeyframedTextOverlay(this, spannable)
-    }
-
     /**
-     * Media3 calls [getText]/[getOverlaySettings] once per output frame with the frame's
-     * presentation time, which is exactly the hook keyframed motion needs — no baking
-     * required, [OverlayItem.poseAt] is evaluated live during export.
+     * Media3 draws an overlay bitmap at its own pixel size relative to the output frame and
+     * calls [getOverlaySettings] once per frame with that frame's timestamp — so keyframed
+     * motion is just [OverlayItem.poseAt] evaluated live.
+     *
+     * The bitmap is rendered once, at the largest scale any keyframe reaches (so scaling up
+     * never stretches a small texture), and each frame scales it back down to the pose.
      */
-    private class KeyframedTextOverlay(
-        private val item: OverlayItem,
-        private val spannable: SpannableString,
-    ) : TextOverlay() {
+    private class KeyframedBitmapOverlay(private val item: OverlayItem, frameWidth: Int) : BitmapOverlay() {
 
-        override fun getText(presentationTimeUs: Long): SpannableString = spannable
+        private val maxScale = item.keyframes.maxOf { it.scale }.coerceIn(1f, MAX_SCALE)
+        private val bitmap: Bitmap = OverlayRenderer.render(item, frameWidth / OverlayRenderer.REFERENCE_WIDTH * maxScale)
+
+        override fun getBitmap(presentationTimeUs: Long): Bitmap = bitmap
 
         override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
             val timeMs = presentationTimeUs / 1000
             val pose = item.poseAt(timeMs)
 
             // Media3's overlay frame is NDC: (-1,-1) bottom-left, (1,1) top-right, y-up.
-            // The editor tracks fractional top-left coordinates (0..1, y-down) — flip Y.
+            // The editor tracks the layer center as fractions (0..1, y-down) — flip Y.
             val ndcX = pose.xFraction * 2f - 1f
             val ndcY = 1f - pose.yFraction * 2f
             val alpha = if (item.isVisibleAt(timeMs)) 1f else 0f
+            val scale = pose.scale / maxScale
 
             return OverlaySettings.Builder()
                 .setBackgroundFrameAnchor(ndcX, ndcY)
-                .setScale(pose.scale, pose.scale)
+                .setScale(scale, scale)
+                // Editor rotation is clockwise on a y-down screen; Media3's is counter-clockwise.
+                .setRotationDegrees(-pose.rotation)
                 .setAlphaScale(alpha)
                 .build()
         }

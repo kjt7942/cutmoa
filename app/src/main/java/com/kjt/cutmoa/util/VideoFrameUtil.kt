@@ -19,6 +19,22 @@ object VideoFrameUtil {
         }
     }
 
+    /** Width of the video at [path] as displayed (rotation metadata applied); 0 if unreadable. */
+    fun displayWidth(path: String): Int {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(path)
+            val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (rotation % 180 == 0) w else h
+        } catch (t: Throwable) {
+            0
+        } finally {
+            retriever.release()
+        }
+    }
+
     /** Total duration of the video at [path], in milliseconds; 0 if it can't be read. */
     fun durationMs(path: String): Long {
         val retriever = MediaMetadataRetriever()

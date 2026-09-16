@@ -9,7 +9,8 @@ import org.json.JSONObject
  * WorkManager's Data can only carry flat primitives/arrays, but an overlay list is a
  * variable number of items each with a variable number of keyframes — so it's shipped to
  * the export worker as one JSON string using the platform's built-in org.json (no extra
- * serialization dependency needed for something this small).
+ * serialization dependency needed for something this small). The editor also uses it to
+ * save its layers across rotation/process death.
  */
 fun List<OverlayItem>.toJson(): String {
     val array = JSONArray()
@@ -22,6 +23,7 @@ fun List<OverlayItem>.toJson(): String {
                     .put("x", kf.xFraction.toDouble())
                     .put("y", kf.yFraction.toDouble())
                     .put("scale", kf.scale.toDouble())
+                    .put("rotation", kf.rotation.toDouble())
             )
         }
         array.put(
@@ -30,9 +32,11 @@ fun List<OverlayItem>.toJson(): String {
                 .put("kind", item.kind.name)
                 .put("text", item.text)
                 .put("color", item.color.toArgb())
+                .put("style", item.style.name)
                 .put("startMs", item.startMs)
                 .put("endMs", item.endMs)
                 .put("keyframes", keyframesJson)
+                .put("animated", item.animated)
         )
     }
     return array.toString()
@@ -50,6 +54,7 @@ fun parseOverlayItems(json: String): List<OverlayItem> {
                 xFraction = kf.getDouble("x").toFloat(),
                 yFraction = kf.getDouble("y").toFloat(),
                 scale = kf.getDouble("scale").toFloat(),
+                rotation = kf.optDouble("rotation", 0.0).toFloat(),
             )
         }
         OverlayItem(
@@ -57,9 +62,11 @@ fun parseOverlayItems(json: String): List<OverlayItem> {
             kind = OverlayKind.valueOf(obj.getString("kind")),
             text = obj.getString("text"),
             color = Color(obj.getInt("color")),
+            style = OverlayTextStyle.valueOf(obj.optString("style", OverlayTextStyle.OUTLINE.name)),
             startMs = obj.getLong("startMs"),
             endMs = obj.getLong("endMs"),
             keyframes = keyframes,
+            animated = obj.optBoolean("animated", keyframes.size > 1),
         )
     }
 }

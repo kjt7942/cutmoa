@@ -1,19 +1,30 @@
 package com.kjt.cutmoa.overlay
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,280 +36,360 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private const val BASE_DP_PER_SECOND = 80f
-private const val MIN_ZOOM = 0.25f
-private const val MAX_ZOOM = 8f
-private const val ROW_HEIGHT_DP = 56
-private const val MIN_DURATION_MS = 300L
-private const val EDGE_HANDLE_DP = 14
+private const val BASE_DP_PER_SECOND = 100f
+private const val MIN_ZOOM = 0.3f
+private const val MAX_ZOOM = 6f
+private val ROW_HEIGHT = 44.dp
+private val RULER_HEIGHT = 22.dp
+private val HANDLE_WIDTH = 22.dp
+private val SNAP_DISTANCE = 10.dp
+
+private val TEXT_BAR = Color(0xFF3D7BD9)
+private val EMOJI_BAR = Color(0xFF8E5BD9)
+val PLAYHEAD_COLOR = Color(0xFFFFC107)
 
 /**
- * Multi-track editor: a ruler, one bar per [OverlayItem] (drag the body to retime, the edges
- * to trim), keyframe diamonds inside each bar (drag to retime a pose, tap to jump the
- * playhead there, long-press to delete), and a playhead line that either side can move.
- * Pinch to zoom in/out for finer control; drag empty track space to pan.
+ * Layer timeline with the playhead pinned to the center: dragging anywhere scrubs the video
+ * under it, pinch zooms. Newest (front-most) layer is the top row.
+ *
+ * A plain drag always scrubs, even across a bar — so scrubbing never retimes a layer by
+ * accident. Tap a bar to select it; long-press-and-drag a bar to move it in time; drag the
+ * wide end handles of the selected bar to trim. Moved/trimmed edges snap to the playhead.
  */
 @Composable
 fun OverlayTimeline(
     durationMs: Long,
     playheadMs: Long,
     overlays: List<OverlayItem>,
-    onSeek: (Long) -> Unit,
+    selectedId: Long?,
+    onScrub: (Long) -> Unit,
+    onSelect: (Long) -> Unit,
+    onEditStart: () -> Unit,
     onItemChange: (OverlayItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    val safeDurationMs = durationMs.coerceAtLeast(1000)
-    var zoomScale by remember { mutableFloatStateOf(1f) }
-    var scrollOffsetPx by remember { mutableFloatStateOf(0f) }
-    var scrollOffsetYPx by remember { mutableFloatStateOf(0f) }
+    val safeDurationMs = durationMs.coerceAtLeast(1)
+    var zoom by remember { mutableFloatStateOf(1f) }
+    val pxPerMs = with(density) { BASE_DP_PER_SECOND.dp.toPx() } * zoom / 1000f
 
-    val pxPerMs = remember(density, zoomScale) {
-        with(density) { (BASE_DP_PER_SECOND * zoomScale).dp.toPx() } / 1000f
-    }
-    val contentWidthPx = safeDurationMs * pxPerMs
-    val contentWidthDp = with(density) { contentWidthPx.toDp() }
-    val rowsHeightDp = (ROW_HEIGHT_DP * overlays.size.coerceAtLeast(1)).dp
-    val rowsHeightPx = with(density) { rowsHeightDp.toPx() }
+    val latestPlayhead = rememberUpdatedState(playheadMs)
+    val latestPxPerMs = rememberUpdatedState(pxPerMs)
+    val latestDuration = rememberUpdatedState(safeDurationMs)
+    val latestOnScrub = rememberUpdatedState(onScrub)
 
-    Column(modifier = modifier) {
-        // Ruler: horizontally in sync with the rows below (same scroll/zoom state), but
-        // never scrolls vertically — it's the fixed reference while layers scroll under it.
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .clipToBounds(),
-        ) {
-            val rulerScrollPx = with(density) {
-                scrollOffsetPx.coerceIn(0f, (contentWidthPx - maxWidth.toPx()).coerceAtLeast(0f))
-            }
-            Box(
-                modifier = Modifier
-                    .width(contentWidthDp)
-                    .height(24.dp)
-                    .offset { IntOffset(-rulerScrollPx.roundToInt(), 0) }
-                    // The ruler is the safe place to scrub — it never overlaps a bar or
-                    // keyframe, so a tap or drag here can never be misread as an edit.
-                    .pointerInput(pxPerMs, safeDurationMs) {
-                        detectTapGestures { offset ->
-                            onSeek((offset.x / pxPerMs).toLong().coerceIn(0, safeDurationMs))
+    BoxWithConstraints(
+        modifier = modifier
+            .background(Color(0xFF161616))
+            .clipToBounds()
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val startPlayhead = latestPlayhead.value
+                    var totalDx = 0f
+                    var scrubbing = false
+                    var multiTouch = false
+                    do {
+                        val event = awaitPointerEvent()
+                        // A selected bar handled this drag itself.
+                        if (event.changes.any { it.isConsumed }) break
+                        if (event.changes.count { it.pressed } >= 2) {
+                            multiTouch = true
+                            zoom = (zoom * event.calculateZoom()).coerceIn(MIN_ZOOM, MAX_ZOOM)
+                            event.changes.forEach { it.consume() }
+                        } else if (!multiTouch) {
+                            totalDx += event.calculatePan().x
+                            if (!scrubbing && abs(totalDx) > viewConfiguration.touchSlop) scrubbing = true
+                            if (scrubbing) {
+                                // From the drag start, not per event: several events can arrive
+                                // before the new playhead recomposes back in.
+                                val target = startPlayhead - (totalDx / latestPxPerMs.value).toLong()
+                                latestOnScrub.value(target.coerceIn(0, latestDuration.value))
+                                event.changes.forEach { it.consume() }
+                            }
                         }
+                    } while (event.changes.any { it.pressed })
+
+                    // Tap on the ruler jumps there.
+                    if (!scrubbing && !multiTouch && down.position.y <= RULER_HEIGHT.toPx()) {
+                        val center = size.width / 2f
+                        val target = latestPlayhead.value + ((down.position.x - center) / latestPxPerMs.value).toLong()
+                        latestOnScrub.value(target.coerceIn(0, latestDuration.value))
                     }
-                    .pointerInput(pxPerMs, safeDurationMs) {
-                        detectDragGestures { change, _ ->
-                            onSeek((change.position.x / pxPerMs).toLong().coerceIn(0, safeDurationMs))
-                        }
-                    },
-            ) {
-                val seconds = (safeDurationMs / 1000).toInt()
-                for (s in 0..seconds) {
-                    Text(
-                        "${s}s",
-                        color = Color.Gray,
-                        fontSize = 10.sp,
-                        modifier = Modifier.offset { IntOffset((s * 1000 * pxPerMs).roundToInt(), 0) },
-                    )
                 }
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset((playheadMs * pxPerMs).roundToInt(), 0) }
-                        .width(2.dp)
-                        .height(24.dp)
-                        .background(Color.Red),
-                )
-            }
-        }
+            },
+    ) {
+        val viewportWidthPx = constraints.maxWidth.toFloat()
+        // Screen x of video time 0.
+        val originPx = viewportWidthPx / 2f - playheadMs * pxPerMs
 
-        // Rows: the only scrollable area — both axes, plus pinch-zoom, live here.
-        BoxWithConstraints(
+        // The video's extent, so it's clear where the clip starts and ends.
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clipToBounds(),
-        ) {
-            val viewportWidthPx = with(density) { maxWidth.toPx() }
-            val viewportHeightPx = with(density) { maxHeight.toPx() }
-            val maxScrollPx = (contentWidthPx - viewportWidthPx).coerceAtLeast(0f)
-            val maxScrollYPx = (rowsHeightPx - viewportHeightPx).coerceAtLeast(0f)
-            val clampedScrollOffsetPx = scrollOffsetPx.coerceIn(0f, maxScrollPx)
-            val clampedScrollOffsetYPx = scrollOffsetYPx.coerceIn(0f, maxScrollYPx)
-            val latestMaxScrollPx = rememberUpdatedState(maxScrollPx)
-            val latestMaxScrollYPx = rememberUpdatedState(maxScrollYPx)
+                .offset { IntOffset(originPx.roundToInt(), 0) }
+                // Unbounded: at most zoom levels the clip is wider than the viewport, and a
+                // plain width() would be clamped to it (the band stopped partway through).
+                .wrapContentWidth(Alignment.Start, unbounded = true)
+                .width(with(density) { (safeDurationMs * pxPerMs).toDp() })
+                .fillMaxHeight()
+                .background(Color(0xFF242424)),
+        )
 
-            Box(
+        Column(modifier = Modifier.fillMaxSize()) {
+            Ruler(originPx = originPx, pxPerMs = pxPerMs, durationMs = safeDurationMs)
+
+            Column(
                 modifier = Modifier
-                    .width(contentWidthDp)
-                    .height(rowsHeightDp)
-                    .offset {
-                        IntOffset(-clampedScrollOffsetPx.roundToInt(), -clampedScrollOffsetYPx.roundToInt())
-                    }
-                    // One gesture detector owns zoom + both scroll axes so they never fight —
-                    // a plain single-finger drag reports zoom=1 and just pans (any direction).
-                    .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            zoomScale = (zoomScale * zoom).coerceIn(MIN_ZOOM, MAX_ZOOM)
-                            scrollOffsetYPx = (scrollOffsetYPx - pan.y).coerceIn(0f, latestMaxScrollYPx.value)
-                            scrollOffsetPx = (scrollOffsetPx - pan.x).coerceIn(0f, latestMaxScrollPx.value)
-                        }
-                    }
-                    .pointerInput(pxPerMs, safeDurationMs) {
-                        detectTapGestures { offset ->
-                            onSeek((offset.x / pxPerMs).toLong().coerceIn(0, safeDurationMs))
-                        }
-                    },
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                // Divider lines drawn first so layer bars sit visibly on top of them.
-                overlays.forEachIndexed { index, item ->
-                    key("row-${item.id}") {
-                        Box(
-                            modifier = Modifier
-                                .offset(y = ((index + 1) * ROW_HEIGHT_DP).dp)
-                                .width(contentWidthDp)
-                                .height(1.dp)
-                                .background(Color(0xFF4A4A4A)),
+                if (overlays.isEmpty()) {
+                    Box(Modifier.fillMaxWidth().height(ROW_HEIGHT), contentAlignment = Alignment.Center) {
+                        Text("추가한 텍스트·이모지가 여기에 레이어로 표시돼요", color = Color.Gray, fontSize = 12.sp)
+                    }
+                }
+                overlays.asReversed().forEach { item ->
+                    key(item.id) {
+                        LayerRow(
+                            item = item,
+                            isSelected = item.id == selectedId,
+                            originPx = originPx,
+                            pxPerMs = pxPerMs,
+                            playheadMs = playheadMs,
+                            durationMs = safeDurationMs,
+                            onSelect = { onSelect(item.id) },
+                            onScrub = onScrub,
+                            onEditStart = onEditStart,
+                            onItemChange = onItemChange,
                         )
                     }
                 }
+            }
+        }
 
-                overlays.forEachIndexed { index, item ->
-                    key(item.id) {
-                        Box(modifier = Modifier.offset(y = (index * ROW_HEIGHT_DP).dp)) {
-                            LayerBar(
-                                item = item,
-                                pxPerMs = pxPerMs,
-                                durationMs = safeDurationMs,
-                                onChange = onItemChange,
-                                onSeek = onSeek,
-                            )
+        // Fixed center playhead.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(PLAYHEAD_COLOR),
+        )
+        Canvas(modifier = Modifier.align(Alignment.TopCenter).size(12.dp, 8.dp)) {
+            drawPath(
+                Path().apply {
+                    moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2f, size.height); close()
+                },
+                PLAYHEAD_COLOR,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Ruler(originPx: Float, pxPerMs: Float, durationMs: Long) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = TextStyle(color = Color(0xFFAAAAAA), fontSize = 10.sp)
+    // Labels at least ~56dp apart whatever the zoom.
+    val minLabelGapPx = with(density) { 56.dp.toPx() }
+    val labelStepMs = listOf(250L, 500L, 1000L, 2000L, 5000L, 10000L, 30000L)
+        .firstOrNull { it * pxPerMs >= minLabelGapPx } ?: 60000L
+    val tickStepMs = labelStepMs / 2
+
+    Canvas(modifier = Modifier.fillMaxWidth().height(RULER_HEIGHT)) {
+        val firstTick = ((-originPx / pxPerMs) / tickStepMs).toLong().coerceAtLeast(0) * tickStepMs
+        var t = firstTick
+        while (t <= durationMs) {
+            val x = originPx + t * pxPerMs
+            if (x > size.width) break
+            val isLabel = t % labelStepMs == 0L
+            drawLine(
+                color = Color(0xFF777777),
+                start = Offset(x, size.height),
+                end = Offset(x, size.height - if (isLabel) 8.dp.toPx() else 4.dp.toPx()),
+                strokeWidth = 1.dp.toPx(),
+            )
+            if (isLabel) {
+                val label = if (t % 1000 == 0L) "${t / 1000}s" else "%.1fs".format(t / 1000f)
+                // Measured unconstrained: drawText(measurer, String) limits width to what's
+                // left of the canvas, which goes negative for a label past the right edge.
+                drawText(measurer.measure(label, labelStyle), topLeft = Offset(x + 3.dp.toPx(), 1.dp.toPx()))
+            }
+            t += tickStepMs
+        }
+    }
+}
+
+@Composable
+private fun LayerRow(
+    item: OverlayItem,
+    isSelected: Boolean,
+    originPx: Float,
+    pxPerMs: Float,
+    playheadMs: Long,
+    durationMs: Long,
+    onSelect: () -> Unit,
+    onScrub: (Long) -> Unit,
+    onEditStart: () -> Unit,
+    onItemChange: (OverlayItem) -> Unit,
+) {
+    val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
+    val latestItem = rememberUpdatedState(item)
+    val latestPxPerMs = rememberUpdatedState(pxPerMs)
+    val latestPlayhead = rememberUpdatedState(playheadMs)
+    val latestDuration = rememberUpdatedState(durationMs)
+    val snapPx = with(density) { SNAP_DISTANCE.toPx() }
+
+    val barLeftPx = originPx + item.startMs * pxPerMs
+    val barWidthPx = ((item.endMs - item.startMs) * pxPerMs).coerceAtLeast(1f)
+    val baseColor = if (item.kind == OverlayKind.EMOJI) EMOJI_BAR else TEXT_BAR
+
+    /** Snaps [ms] onto the playhead when it's within a few dp of it. */
+    fun snapToPlayhead(ms: Long): Long =
+        if (abs(ms - latestPlayhead.value) * latestPxPerMs.value <= snapPx) latestPlayhead.value else ms
+
+    Box(modifier = Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(barLeftPx.roundToInt(), 0) }
+                .align(Alignment.CenterStart)
+                .wrapContentWidth(Alignment.Start, unbounded = true)
+                .width(with(density) { barWidthPx.toDp() })
+                .height(ROW_HEIGHT - 8.dp)
+                .background(if (isSelected) baseColor else baseColor.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                .then(if (isSelected) Modifier.border(2.dp, Color.White, RoundedCornerShape(6.dp)) else Modifier)
+                .pointerInput(Unit) { detectTapGestures { onSelect() } }
+                .pointerInput(Unit) {
+                    var origin = latestItem.value
+                    var dragged = 0f
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSelect()
+                            onEditStart()
+                            origin = latestItem.value
+                            dragged = 0f
+                        },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        dragged += dragAmount.x
+                        var newStart = origin.startMs + (dragged / latestPxPerMs.value).toLong()
+                        val span = origin.endMs - origin.startMs
+                        val snappedStart = snapToPlayhead(newStart)
+                        newStart = if (snappedStart != newStart) snappedStart else snapToPlayhead(newStart + span) - span
+                        onItemChange(origin.movedTo(newStart, latestDuration.value))
+                    }
+                },
+        ) {
+            // Keep the label on screen when the bar starts left of the viewport.
+            val labelInsetPx = (-barLeftPx).coerceAtLeast(0f)
+            Text(
+                item.text.lineSequence().first(),
+                color = Color.White,
+                fontSize = if (item.kind == OverlayKind.EMOJI) 16.sp else 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset { IntOffset(labelInsetPx.roundToInt(), 0) }
+                    .padding(horizontal = if (isSelected) HANDLE_WIDTH + 4.dp else 8.dp),
+            )
+
+            if (isSelected) {
+                TrimHandle(
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    onDragStart = onEditStart,
+                    onDrag = { totalDx, origin ->
+                        val raw = origin.startMs + (totalDx / latestPxPerMs.value).toLong()
+                        onItemChange(origin.trimmedStart(snapToPlayhead(raw)))
+                    },
+                    latestItem = latestItem,
+                )
+                TrimHandle(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    onDragStart = onEditStart,
+                    onDrag = { totalDx, origin ->
+                        val raw = origin.endMs + (totalDx / latestPxPerMs.value).toLong()
+                        onItemChange(origin.trimmedEnd(snapToPlayhead(raw), latestDuration.value))
+                    },
+                    latestItem = latestItem,
+                )
+
+                // Keyframe markers (only when animated): tap one to jump the playhead to it.
+                if (item.animated) {
+                    item.keyframes.forEach { kf ->
+                        key(kf.timeMs) {
+                            val xPx = (kf.timeMs - item.startMs) * pxPerMs
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .offset { IntOffset((xPx - 7.dp.toPx()).roundToInt(), 5.dp.roundToPx()) }
+                                    .size(14.dp)
+                                    .pointerInput(kf.timeMs) { detectTapGestures { onScrub(kf.timeMs) } },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(9.dp)
+                                        .rotate(45f)
+                                        .background(PLAYHEAD_COLOR)
+                                        .border(1.dp, Color.Black),
+                                )
+                            }
                         }
                     }
                 }
-
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset((playheadMs * pxPerMs).roundToInt(), 0) }
-                        .width(2.dp)
-                        .height(rowsHeightDp)
-                        .background(Color.Red),
-                )
             }
         }
     }
 }
 
 @Composable
-private fun LayerBar(
-    item: OverlayItem,
-    pxPerMs: Float,
-    durationMs: Long,
-    onChange: (OverlayItem) -> Unit,
-    onSeek: (Long) -> Unit,
+private fun TrimHandle(
+    modifier: Modifier,
+    onDragStart: () -> Unit,
+    onDrag: (totalDx: Float, origin: OverlayItem) -> Unit,
+    latestItem: androidx.compose.runtime.State<OverlayItem>,
 ) {
-    val latestItem = rememberUpdatedState(item)
-    val startPx = item.startMs * pxPerMs
-    val widthPx = (item.endMs - item.startMs) * pxPerMs
-    val density = LocalDensity.current
-    val barColor = if (item.kind == OverlayKind.EMOJI) Color(0xFFB388FF) else Color(0xFF64B5F6)
-
     Box(
-        modifier = Modifier
-            .offset { IntOffset(startPx.roundToInt(), 0) }
-            .width(with(density) { widthPx.toDp() })
-            .height((ROW_HEIGHT_DP - 8).dp)
-            .background(barColor, RoundedCornerShape(8.dp))
-            .pointerInput(pxPerMs, durationMs) {
-                detectDragGestures { _, dragAmount ->
-                    val deltaMs = (dragAmount.x / pxPerMs).toLong()
-                    val current = latestItem.value
-                    val span = current.endMs - current.startMs
-                    val newStart = (current.startMs + deltaMs).coerceIn(0, durationMs - span)
-                    val shift = newStart - current.startMs
-                    if (shift == 0L) return@detectDragGestures
-                    onChange(
-                        current.copy(
-                            startMs = newStart,
-                            endMs = newStart + span,
-                            keyframes = current.keyframes.map { it.copy(timeMs = it.timeMs + shift) },
-                        )
-                    )
+        modifier = modifier
+            .width(HANDLE_WIDTH)
+            .fillMaxHeight()
+            .background(Color.White.copy(alpha = 0.92f), RoundedCornerShape(5.dp))
+            .pointerInput(Unit) {
+                var origin = latestItem.value
+                var dragged = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { onDragStart(); origin = latestItem.value; dragged = 0f },
+                ) { change, dx ->
+                    change.consume()
+                    dragged += dx
+                    onDrag(dragged, origin)
                 }
             },
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            item.text,
-            color = Color.White,
-            maxLines = 1,
-            fontSize = 12.sp,
-            modifier = Modifier.align(Alignment.CenterStart).padding(start = EDGE_HANDLE_DP.dp + 2.dp),
-        )
-
-        // Trim handles: narrow drag zones pinned to each edge.
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(EDGE_HANDLE_DP.dp)
-                .fillMaxHeight()
-                .pointerInput(pxPerMs) {
-                    detectDragGestures { _, dragAmount ->
-                        val deltaMs = (dragAmount.x / pxPerMs).toLong()
-                        val current = latestItem.value
-                        val newStart = (current.startMs + deltaMs).coerceIn(0, current.endMs - MIN_DURATION_MS)
-                        onChange(current.copy(startMs = newStart))
-                    }
-                },
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .width(EDGE_HANDLE_DP.dp)
-                .fillMaxHeight()
-                .pointerInput(pxPerMs, durationMs) {
-                    detectDragGestures { _, dragAmount ->
-                        val deltaMs = (dragAmount.x / pxPerMs).toLong()
-                        val current = latestItem.value
-                        val newEnd = (current.endMs + deltaMs).coerceIn(current.startMs + MIN_DURATION_MS, durationMs)
-                        onChange(current.copy(endMs = newEnd))
-                    }
-                },
-        )
-
-        item.keyframes.forEach { kf ->
-            key(kf.timeMs) {
-                val kfX = (kf.timeMs - item.startMs) * pxPerMs
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .offset { IntOffset(kfX.roundToInt() - 6, -4) }
-                        .width(12.dp)
-                        .height(12.dp)
-                        .background(Color.White, RoundedCornerShape(2.dp))
-                        .pointerInput(kf.timeMs, pxPerMs) {
-                            detectDragGestures { _, dragAmount ->
-                                val deltaMs = (dragAmount.x / pxPerMs).toLong()
-                                val current = latestItem.value
-                                val existing = current.keyframes.find { it.timeMs == kf.timeMs }
-                                    ?: return@detectDragGestures
-                                val newTimeMs = (existing.timeMs + deltaMs).coerceIn(current.startMs, current.endMs)
-                                onChange(current.withKeyframeAt(newTimeMs, existing.xFraction, existing.yFraction, existing.scale).withoutKeyframeAt(existing.timeMs))
-                            }
-                        }
-                        .pointerInput(kf.timeMs) {
-                            detectTapGestures(
-                                onTap = { onSeek(kf.timeMs) },
-                                onLongPress = { onChange(latestItem.value.withoutKeyframeAt(kf.timeMs)) },
-                            )
-                        },
-                )
-            }
-        }
+        Box(Modifier.width(2.dp).height(14.dp).background(Color(0xFF555555)))
     }
 }
