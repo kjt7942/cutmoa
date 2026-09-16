@@ -72,13 +72,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import java.util.UUID
 import kotlin.math.roundToInt
 
 private val PRESET_COLORS = listOf(Color.White, Color.Black, Color.Red, Color.Yellow, Color(0xFF3DDC84))
@@ -143,17 +143,21 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
     var editingItemId by remember { mutableStateOf<Long?>(null) }
     var selectedItemId by remember { mutableStateOf<Long?>(null) }
     var nextId by remember { mutableLongStateOf(0L) }
-    var activeWorkId by remember { mutableStateOf<UUID?>(null) }
-
-    val workInfoFlow = remember(activeWorkId) {
-        activeWorkId?.let { workManager.getWorkInfoByIdFlow(it) } ?: flowOf(null)
-    }
-    val workInfo by workInfoFlow.collectAsState(initial = null)
+    // Watched by the request's stable name, not by an id kept in `remember`: an id is lost on
+    // rotation, orphaning the running export (it keeps encoding with no one watching, the
+    // "만들기" button reappears, and a second overlapping export can be started on top of it).
+    val workInfo by remember {
+        workManager.getWorkInfosForUniqueWorkFlow(OverlayExportWorker.UNIQUE_WORK_NAME).map { it.firstOrNull() }
+    }.collectAsState(initial = null)
 
     LaunchedEffect(workInfo?.state) {
         val info = workInfo ?: return@LaunchedEffect
         if (info.state == WorkInfo.State.SUCCEEDED) {
-            info.outputData.getString(OverlayExportWorker.KEY_OUTPUT_URI)?.let(onExported)
+            info.outputData.getString(OverlayExportWorker.KEY_OUTPUT_URI)?.let {
+                // Same as the merge screen: prune so re-entering doesn't replay the old export.
+                workManager.pruneWork()
+                onExported(it)
+            }
         }
     }
 
@@ -311,8 +315,11 @@ fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     onClick = {
                         val request = OverlayExportWorker.buildRequest(mergedVideoPath, overlays)
-                        activeWorkId = request.id
-                        workManager.enqueue(request)
+                        workManager.enqueueUniqueWork(
+                            OverlayExportWorker.UNIQUE_WORK_NAME,
+                            ExistingWorkPolicy.KEEP,
+                            request,
+                        )
                     }
                 ) {
                     Text("최종 영상 만들기")

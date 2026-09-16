@@ -52,6 +52,14 @@ class MergeWorker(
         const val KEY_ERROR = "error"
         private const val NOTIF_ID = 1001
 
+        /**
+         * Observed by name, not by request id: an id kept in `remember` is lost on rotation
+         * or on leaving and returning to the merge screen, orphaning the running job (it keeps
+         * merging in the background with no one watching, and the button reappears inviting a
+         * second, overlapping run). A stable unique-work name survives all of that for free.
+         */
+        const val UNIQUE_WORK_NAME = "merge_work"
+
         fun buildRequest(clipUris: List<Uri>): OneTimeWorkRequest =
             OneTimeWorkRequest.Builder(MergeWorker::class.java)
                 .setInputData(

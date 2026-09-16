@@ -2,6 +2,7 @@ package com.kjt.cutmoa.merge
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +33,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,37 +50,67 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import java.util.UUID
+
+/** [fromCamera] just tells the list apart visually — the merge itself only needs the [uri]. */
+data class QueuedClip(val uri: Uri, val fromCamera: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MergeScreen(onMerged: (String) -> Unit) {
+fun MergeScreen(clips: List<QueuedClip>, onClipsChange: (List<QueuedClip>) -> Unit, onMerged: (String) -> Unit) {
     val context = LocalContext.current
     val workManager = remember { WorkManager.getInstance(context) }
 
-    var selectedClips by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var activeWorkId by remember { mutableStateOf<UUID?>(null) }
+    val selectedClips = clips
+
+    // A queued clip can be deleted from the gallery before merging; merging it would fail the
+    // whole job, so unreadable ones are dropped (on entry and again right before starting).
+    fun dropMissing(): List<QueuedClip> {
+        val readable = selectedClips.filter {
+            runCatching { context.contentResolver.openFileDescriptor(it.uri, "r")!!.close() }.isSuccess
+        }
+        if (readable.size < selectedClips.size) {
+            onClipsChange(readable)
+            Toast.makeText(context, "삭제된 클립 ${selectedClips.size - readable.size}개를 목록에서 뺐어요", Toast.LENGTH_SHORT).show()
+        }
+        return readable
+    }
+    LaunchedEffect(Unit) { dropMissing() }
 
     val pickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(20)
-    ) { uris -> if (uris.isNotEmpty()) selectedClips = (selectedClips + uris).distinct() }
-
-    val workInfoFlow = remember(activeWorkId) {
-        activeWorkId?.let { workManager.getWorkInfoByIdFlow(it) } ?: flowOf(null)
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            val existing = selectedClips.map { it.uri }.toSet()
+            onClipsChange(selectedClips + uris.filterNot { it in existing }.map { QueuedClip(it, fromCamera = false) })
+        }
     }
-    val workInfo by workInfoFlow.collectAsState(initial = null)
+
+    // Watched by the request's stable name, not by an id kept in `remember`: an id is lost on
+    // rotation or on leaving and returning to this screen, which orphans the running job (it
+    // keeps merging with no one watching, and the start button reappears inviting a second,
+    // overlapping run on the same clips).
+    val workInfo by remember {
+        workManager.getWorkInfosForUniqueWorkFlow(MergeWorker.UNIQUE_WORK_NAME).map { it.firstOrNull() }
+    }.collectAsState(initial = null)
 
     LaunchedEffect(workInfo?.state) {
         val info = workInfo ?: return@LaunchedEffect
         if (info.state == WorkInfo.State.SUCCEEDED) {
             val outputPath = info.outputData.getString(MergeWorker.KEY_OUTPUT_PATH)
-            if (outputPath != null) onMerged(outputPath)
+            if (outputPath != null) {
+                // Finished records outlive the job; without pruning, coming back to this screen
+                // would replay this SUCCEEDED state and jump straight to the old merged video.
+                workManager.pruneWork()
+                onMerged(outputPath)
+            }
         }
     }
 
@@ -99,17 +132,19 @@ fun MergeScreen(onMerged: (String) -> Unit) {
                     Text("선택된 클립 없음", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
+                var pendingRemoveIndex by remember { mutableStateOf<Int?>(null) }
+
                 LazyColumn(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                    items(selectedClips, key = { it.toString() }) { uri ->
-                        val index = selectedClips.indexOf(uri)
+                    items(selectedClips, key = { it.uri.toString() }) { clip ->
+                        val index = selectedClips.indexOf(clip)
                         ClipRow(
                             order = index + 1,
-                            uri = uri,
+                            clip = clip,
                             canMoveUp = index > 0,
                             canMoveDown = index < selectedClips.size - 1,
-                            onMoveUp = { selectedClips = selectedClips.swap(index, index - 1) },
-                            onMoveDown = { selectedClips = selectedClips.swap(index, index + 1) },
-                            onRemove = { selectedClips = selectedClips.toMutableList().apply { removeAt(index) } },
+                            onMoveUp = { onClipsChange(selectedClips.swap(index, index - 1)) },
+                            onMoveDown = { onClipsChange(selectedClips.swap(index, index + 1)) },
+                            onRemove = { pendingRemoveIndex = index },
                         )
                     }
                 }
@@ -129,13 +164,33 @@ fun MergeScreen(onMerged: (String) -> Unit) {
                     Button(
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                         onClick = {
-                            val request = MergeWorker.buildRequest(selectedClips)
-                            activeWorkId = request.id
-                            workManager.enqueue(request)
+                            val readable = dropMissing()
+                            if (readable.isEmpty()) return@Button
+                            val request = MergeWorker.buildRequest(readable.map { it.uri })
+                            workManager.enqueueUniqueWork(
+                                MergeWorker.UNIQUE_WORK_NAME,
+                                ExistingWorkPolicy.KEEP,
+                                request,
+                            )
                         }
                     ) {
                         Text("${selectedClips.size}개 클립 병합 시작")
                     }
+                }
+
+                pendingRemoveIndex?.let { index ->
+                    AlertDialog(
+                        onDismissRequest = { pendingRemoveIndex = null },
+                        title = { Text("클립 제거") },
+                        text = { Text("${index + 1}번 클립을 목록에서 뺄까요? 촬영본 자체는 갤러리에 그대로 남아요.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                onClipsChange(selectedClips.toMutableList().apply { removeAt(index) })
+                                pendingRemoveIndex = null
+                            }) { Text("제거") }
+                        },
+                        dismissButton = { TextButton(onClick = { pendingRemoveIndex = null }) { Text("취소") } },
+                    )
                 }
 
                 if (workInfo?.state == WorkInfo.State.FAILED) {
@@ -153,7 +208,7 @@ fun MergeScreen(onMerged: (String) -> Unit) {
 @Composable
 private fun ClipRow(
     order: Int,
-    uri: Uri,
+    clip: QueuedClip,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onMoveUp: () -> Unit,
@@ -161,6 +216,7 @@ private fun ClipRow(
     onRemove: () -> Unit,
 ) {
     val context = LocalContext.current
+    val uri = clip.uri
     var thumbnail by remember(uri) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(uri) {
         thumbnail = withContext(Dispatchers.IO) { VideoFrameUtil.frameAt(context, uri) }
@@ -187,10 +243,17 @@ private fun ClipRow(
                     )
                 }
             }
-            Text(
-                "$order.  ${uri.lastPathSegment ?: uri}",
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-            )
+            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                Text(
+                    // A recorded clip and a gallery pick look identical otherwise — without
+                    // this, there's no way to tell "I just shot this" from "I picked this
+                    // from my camera roll" once both sit in the same list.
+                    if (clip.fromCamera) "촬영본" else "갤러리",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("$order.  ${uri.lastPathSegment ?: uri}")
+            }
             IconButton(onClick = onMoveUp, enabled = canMoveUp) {
                 Icon(Icons.Filled.ArrowUpward, contentDescription = "위로")
             }

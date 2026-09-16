@@ -48,6 +48,9 @@ class OverlayExportWorker(
         const val KEY_ERROR = "error"
         private const val NOTIF_ID = 1002
 
+        /** Same reasoning as [com.kjt.cutmoa.merge.MergeWorker.UNIQUE_WORK_NAME]. */
+        const val UNIQUE_WORK_NAME = "overlay_export_work"
+
         fun buildRequest(sourcePath: String, overlays: List<OverlayItem>): OneTimeWorkRequest {
             val data = workDataOf(
                 KEY_SOURCE_PATH to sourcePath,

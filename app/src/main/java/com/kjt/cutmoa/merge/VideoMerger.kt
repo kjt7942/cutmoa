@@ -54,12 +54,10 @@ object VideoMerger {
                 .build()
         }
 
-        // ponytail: assumes every clip already has an audio track, true for anything
-        // this app records itself (VideoCaptureManager always calls withAudioEnabled()).
-        // A silent gallery clip mixed into the sequence can desync the concat — if that
-        // turns out to matter, switch to EditedMediaItemSequence.Builder().setForceAudioTrack(true).
         val sequence = EditedMediaItemSequence(editedItems)
-        val composition = Composition.Builder(sequence).build()
+        // Gallery picks can have no audio track; forcing one fills those clips with silence
+        // so the concat stays in sync instead of failing or drifting.
+        val composition = Composition.Builder(sequence).experimentalSetForceAudioTrack(true).build()
 
         if (outputFile.exists()) outputFile.delete()
         outputFile.parentFile?.mkdirs()

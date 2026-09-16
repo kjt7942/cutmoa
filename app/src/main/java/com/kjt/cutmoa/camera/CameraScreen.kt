@@ -100,11 +100,11 @@ private const val MAX_CUSTOM_SECONDS = 30
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun CameraScreen(onNavigateToMerge: () -> Unit) {
+fun CameraScreen(cutCount: Int, onCutRecorded: (Uri) -> Unit, onNavigateToMerge: () -> Unit) {
     val permissionState = rememberMultiplePermissionsState(REQUIRED_PERMISSIONS)
 
     if (permissionState.allPermissionsGranted) {
-        RecordingScreen(onNavigateToMerge = onNavigateToMerge)
+        RecordingScreen(cutCount = cutCount, onCutRecorded = onCutRecorded, onNavigateToMerge = onNavigateToMerge)
     } else {
         // shouldShowRationale is false both before the first ask and after a permanent
         // "don't ask again" denial, so the two are only distinguishable by whether this
@@ -153,7 +153,7 @@ private fun PermissionRequestScreen(permanentlyDenied: Boolean, onRequestPermiss
 }
 
 @Composable
-private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
+private fun RecordingScreen(cutCount: Int, onCutRecorded: (Uri) -> Unit, onNavigateToMerge: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -295,7 +295,13 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                     .padding(16.dp)
                     .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50)),
             ) {
-                Text("병합하러 가기 →", color = Color.White)
+                // Cut count in the label is the only signal that recordings are piling up
+                // for the merge step — without it, "did my last take actually get saved?"
+                // has no answer until the user leaves this screen.
+                Text(
+                    if (cutCount > 0) "컷 ${cutCount}개 · 병합하러 가기 →" else "병합하러 가기 →",
+                    color = Color.White,
+                )
             }
         }
 
@@ -346,7 +352,12 @@ private fun RecordingScreen(onNavigateToMerge: () -> Unit) {
                         isRecording = false
                     } else {
                         captureManager.startRecording { event ->
-                            handleRecordEvent(context, event, onFinalized = { isRecording = false })
+                            handleRecordEvent(
+                                context,
+                                event,
+                                onFinalized = { isRecording = false },
+                                onSaved = onCutRecorded,
+                            )
                         }
                         isRecording = true
                     }
@@ -595,6 +606,7 @@ private fun handleRecordEvent(
     context: android.content.Context,
     event: VideoRecordEvent,
     onFinalized: () -> Unit,
+    onSaved: (Uri) -> Unit,
 ) {
     if (event is VideoRecordEvent.Finalize) {
         onFinalized()
@@ -602,6 +614,7 @@ private fun handleRecordEvent(
             "저장 실패 (code=${event.error})"
         } else {
             vibrateLight(context)
+            onSaved(event.outputResults.outputUri)
             "저장 완료"
         }
         Toast.makeText(context, message, Toast.LENGTH_SHORT).apply {
