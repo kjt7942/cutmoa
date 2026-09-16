@@ -22,7 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.kjt.cutmoa.util.LightSystemBarIcons
+import com.kjt.cutmoa.util.SystemBarsFor
 
 // Gray, not translucent black: the pills straddle the black letterbox and the video, and
 // black-on-black made their top half vanish.
@@ -30,7 +30,7 @@ private val PILL_COLOR = Color(0xFF3A3A3A).copy(alpha = 0.75f)
 
 @Composable
 fun ResultScreen(finalVideoUri: String, onRestart: () -> Unit) {
-    LightSystemBarIcons()
+    SystemBarsFor(darkContent = true)
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {

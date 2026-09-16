@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.kjt.cutmoa.util.SystemBarsFor
 import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -65,6 +66,7 @@ data class QueuedClip(val uri: Uri, val fromCamera: Boolean)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MergeScreen(clips: List<QueuedClip>, onClipsChange: (List<QueuedClip>) -> Unit, onMerged: (String) -> Unit) {
+    SystemBarsFor(darkContent = false)
     val context = LocalContext.current
     val workManager = remember { WorkManager.getInstance(context) }
 

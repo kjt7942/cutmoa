@@ -80,7 +80,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.kjt.cutmoa.util.LightSystemBarIcons
+import com.kjt.cutmoa.util.SystemBarsFor
 import java.util.Locale
 import kotlin.math.roundToInt
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -168,7 +168,7 @@ private fun RecordingScreen(cutCount: Int, onCutRecorded: (Uri) -> Unit, onNavig
     var zoom by remember { mutableFloatStateOf(1f) }
 
     // Camera preview fills the whole screen like a native camera app, including behind the nav bar.
-    LightSystemBarIcons()
+    SystemBarsFor(darkContent = true)
 
     DisposableEffect(Unit) {
         onDispose { captureManager.release() }

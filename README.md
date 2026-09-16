@@ -318,6 +318,13 @@ RELEASE_KEY_PASSWORD=...
 - 처음에 `java.util.Properties()`를 `android { }` 근처에서 그대로 쓰니 `Unresolved reference: util` — Gradle Kotlin DSL에서 `java`가 Java 플러그인 확장으로 해석됨. 파일 맨 위에 `import java.util.Properties`로 해결.
 - `assembleRelease` 후 `apksigner verify --print-certs`로 `CN=kjt7942, O=CutMoa, C=KR` 서명 확인. 기존 debug 앱은 서명이 달라 덮어쓰기가 안 되므로 삭제 후 release APK 설치.
 
+### 2026-09-16 20:47 ~ 20:50 — 촬영 화면 위·아래에 흰 띠가 생기던 문제 수정
+
+- 요청: "영상 촬영화면 풀로 나왔었는데, 왜 위,아래에 흰색배경 보여?"
+- 원인: `LightSystemBarIcons()`가 화면에 들어올 때 이전 시스템 바 설정을 저장했다가, 화면이 사라질 때(`onDispose`) 되돌리는 구조였음. 그런데 화면 전환 애니메이션 중에는 **들어오는 화면이 먼저 설정을 적용하고, 나가는 화면이 나중에 dispose**됨. 결과 화면 → "새로 촬영하기"로 돌아오면 결과 화면의 "복구"가 촬영 화면 설정을 덮어써서 상태바·내비게이션 바에 흰 스크림 + 검은 아이콘이 생김.
+- 수정: 저장/복구를 없애고 `SystemBarsFor(darkContent)`로 **화면마다 자기 모양을 선언**. 적용 시점은 해당 내비게이션 목적지의 `ON_RESUME`(전환이 끝나고 실제로 보이는 화면만 resume됨)이라 순서 경쟁이 생기지 않음. 촬영·결과 화면은 `darkContent = true`, 병합·편집 화면은 `false`.
+- 실기기 확인: 앱 시작 → 촬영(풀화면) → 병합(흰 배경·검은 아이콘) → 편집 → 결과(풀화면) → 새로 촬영하기(풀화면 유지), 병합 화면에서 뒤로 가기(풀화면 유지).
+
 ## 스크린샷
 
 | 촬영 | 클립 병합 | 자막·이모지 오버레이 | 결과 (전체 화면 재생) |
@@ -367,6 +374,7 @@ RELEASE_KEY_PASSWORD=...
 - **알려진 한계 — 추적 AF** — 초점 재트리거 조건이 "화면상 이동 거리"라서, 사물이 화면 위치는 그대로인 채 앞뒤로만 움직이면 초점을 다시 잡지 않음(`VideoCaptureManager.kt:291`). 템플릿 매칭 특성상 빠른 움직임·크기 변화·가려짐에 약하고, 놓침 판정 임계값(`lostScore`)은 실기기에서 조정이 필요한 값(`SubjectTracker.kt:21`).
 - **`remember`에 저장한 작업 id는 화면 회전에 사라짐** — WorkManager 작업은 화면과 상관없이 계속 도는데, 그 작업의 id를 Compose `remember`에만 들고 있으면 회전하는 순간 id를 잃어 진행률도 결과도 못 받음. 고정 이름으로 작업을 등록(`enqueueUniqueWork`)하면 언제 다시 들어와도 같은 이름으로 찾을 수 있음(`MergeWorker.UNIQUE_WORK_NAME`).
 - **이름으로 조회하면 끝난 작업 기록도 나옴** — WorkManager는 끝난 작업 기록을 한동안 보관해서, 고정 이름으로 조회하면 지난번 SUCCEEDED 기록이 나오고 "완료되면 다음 화면으로" 로직이 화면에 들어오자마자 다시 실행됨. 결과를 받은 직후 `pruneWork()`로 기록을 지워 해결.
+- **dispose 시점에 "원래대로 복구"하는 전역 설정은 화면 전환과 경쟁함** — Compose Navigation은 전환 중 두 화면이 동시에 떠 있고, 나가는 화면의 `onDispose`가 들어오는 화면의 effect보다 늦게 실행됨. 창(window) 같은 전역 상태는 저장/복구 대신 각 화면이 resume될 때 자기 상태를 다시 적용하는 쪽이 안전함(`SystemBars.kt`).
 - **media3 API 이름은 버전마다 다름** — 코드 주석에 적어둔 `EditedMediaItemSequence.Builder().setForceAudioTrack()`는 1.5.0에 없었음. 설치된 jar를 열어 실제 메서드를 찾아보니 `Composition.Builder.experimentalSetForceAudioTrack`. 문서보다 쓰고 있는 버전의 jar를 먼저 확인하는 게 빠름.
 - **알려진 한계 — 수평 가이드** — 센서 구독이 촬영 화면이 떠 있는 동안 유지돼, 앱이 백그라운드로 가도 계속 동작(`LevelGuide.kt:64`).
 

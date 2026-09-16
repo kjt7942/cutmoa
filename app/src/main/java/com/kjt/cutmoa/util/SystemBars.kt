@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -16,37 +19,34 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 /**
- * For full-screen dark content (camera feed, video playback) drawn behind the system bars.
- * enableEdgeToEdge() already draws content there, but the system still paints a dimming
- * scrim behind button-mode nav bars for legibility by default; drop that and use light
- * (white) bar icons while the caller is composed, then restore.
+ * Every screen declares its own system bar look, applied each time its nav destination
+ * resumes. The old version saved the previous look and restored it on dispose, but during a
+ * navigation transition the leaving screen is disposed *after* the entering one has applied
+ * its look — so e.g. Result → Camera ended with the result screen's "restore" putting a white
+ * scrim and dark icons over the full-screen camera preview.
+ *
+ * [darkContent] = full-screen camera/video behind the bars: no scrim, white icons.
+ * Otherwise the light Material screens: system scrim on, dark icons.
  */
 @Composable
-fun LightSystemBarIcons() {
+fun SystemBarsFor(darkContent: Boolean) {
     val view = LocalView.current
-    DisposableEffect(view) {
-        val window = view.context.findActivity()?.window
-        val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-        val previousLightNavIcons = insetsController?.isAppearanceLightNavigationBars
-        val previousLightStatusIcons = insetsController?.isAppearanceLightStatusBars
-
-        if (window != null) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(view, lifecycleOwner, darkContent) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
+            val window = view.context.findActivity()?.window ?: return@LifecycleEventObserver
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = !darkContent
+                window.isStatusBarContrastEnforced = !darkContent
             }
             window.navigationBarColor = AndroidColor.TRANSPARENT
-        }
-        insetsController?.isAppearanceLightNavigationBars = false
-        insetsController?.isAppearanceLightStatusBars = false
-
-        onDispose {
-            if (window != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = true
-                window.isStatusBarContrastEnforced = true
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightNavigationBars = !darkContent
+                isAppearanceLightStatusBars = !darkContent
             }
-            previousLightNavIcons?.let { insetsController?.isAppearanceLightNavigationBars = it }
-            previousLightStatusIcons?.let { insetsController?.isAppearanceLightStatusBars = it }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 }

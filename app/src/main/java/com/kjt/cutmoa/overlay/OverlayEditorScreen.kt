@@ -75,6 +75,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.work.ExistingWorkPolicy
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import com.kjt.cutmoa.util.SystemBarsFor
 import com.kjt.cutmoa.util.VideoFrameUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -89,6 +90,7 @@ private const val MIN_LAYER_DURATION_MS = 300L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OverlayEditorScreen(mergedVideoPath: String, onExported: (String) -> Unit) {
+    SystemBarsFor(darkContent = false)
     val context = LocalContext.current
     val workManager = remember { WorkManager.getInstance(context) }
 
