@@ -119,14 +119,18 @@ GitHub: https://github.com/kjt7942/cutmoa
 
 - Kotlin, Jetpack Compose (Material3)
 - CameraX 1.4.1 — 영상 촬영, `ImageAnalysis`(추적 AF용 프레임 분석), `ViewPort`(스트림 간 크롭 통일), 해상도·FPS·배율 조회/설정, Camera2 Interop(해상도별 최대 FPS 계산)
-- Media3 Transformer/Effect 1.5.0 — 병합, 오버레이 렌더링
+- Media3 Transformer/Effect 1.5.0 — 병합(`Presentation`으로 사양 통일, `experimentalSetForceAudioTrack`), 자막·이모지 합성(`BitmapOverlay` + 프레임별 `OverlaySettings`)
 - Media3 ExoPlayer 1.5.0 — 편집 화면 병합본 재생(Transformer가 이미 포함하던 라이브러리)
 - Android `VideoView` — 결과 화면 재생, 추가 라이브러리 없음
+- `android.graphics`(`StaticLayout`, `Canvas`) — 자막·이모지 비트맵 렌더링(`OverlayRenderer`), 편집 화면과 내보내기가 같은 비트맵 사용
+- Compose `Canvas` + `awaitEachGesture` — 레이어 그리기, 이동·핀치·회전·스냅 제스처 직접 구현
+- Material Icons Extended — 편집 도구 아이콘(되돌리기, 복제, 맨 앞 등)
 - Navigation Compose — 화면 전환
 - WorkManager — 프로세스 종료에도 살아남는 백그라운드 병합/내보내기
 - Accompanist Permissions — 런타임 권한 처리
 - Android SensorManager(중력 센서) — 수평·각도 가이드, 추가 라이브러리 없음
-- JUnit 4 — 추적 로직·좌표 변환 JVM 유닛 테스트
+- JUnit 4 — 추적 로직·좌표 변환·오버레이 키프레임/기하 계산 JVM 유닛 테스트(17개)
+- 배포 — `apksigner`로 서명 확인, GitHub CLI(`gh release create`)로 GitHub Releases 업로드
 
 ## 요구 사항
 
@@ -288,7 +292,7 @@ RELEASE_KEY_PASSWORD=...
 - 결과 화면에 공유 버튼(`Intent.ACTION_SEND`) 추가.
 - 프로젝트 첫 lint 실행에서 에러 77개가 나왔는데, 모두 이미 의도하고 쓰던 실험적 API에 `@OptIn`/`@SuppressLint`가 빠진 것이었음(동작 버그 아님). `app/lint.xml`과 어노테이션으로 정리 → lint 에러 0.
 
-### 2026-09-16 19:16 ~ 20:15 — 촬영한 컷이 병합 목록에 자동으로 담기게, 백그라운드 작업 추적 방식 수정
+### 2026-09-16 19:16 ~ 20:15 — 촬영한 컷이 병합 목록에 자동으로 담기게, 백그라운드 작업 추적 방식 수정 (`e76ac90`)
 
 - 기존에는 촬영 후 병합 화면에서 방금 찍은 클립을 갤러리에서 다시 골라야 했음.
 - **컷 목록을 상위(`AppNavHost`)로 올림** — 촬영 화면과 병합 화면이 같은 목록(`QueuedClip`)을 공유. 녹화가 끝나면(`VideoRecordEvent.Finalize`) 저장된 URI를 목록에 추가하고, 같은 URI는 중복 추가하지 않음(`LazyColumn` 키 중복으로 크래시 나는 것 방지). `rememberSaveable` + 문자열 `listSaver`로 화면 회전·프로세스 종료 후에도 유지. "새로 촬영하기"를 누르면 목록 초기화.
@@ -302,7 +306,9 @@ RELEASE_KEY_PASSWORD=...
   - "새로 촬영하기" → 병합 화면으로 가면 목록이 비어 있고 이전 결과로 넘어가지 않음
 - 테스트 중 확인한 것: 처음 병합 화면에 들어갔을 때 **이전 빌드로 19:39에 병합한 5초짜리 영상으로 편집 화면이 바로 열림**. 수정 전 빌드가 남긴 SUCCEEDED 기록 때문이었고, 그때 `pruneWork()`가 실행돼 기록이 지워진 뒤로는 재현되지 않음. 업데이트 직후 한 번만 생기는 현상.
 
-### 2026-09-16 20:18 ~ 20:26 — 남은 한계 정리 + 실기기 전체 흐름 재검증
+### 2026-09-16 20:18 ~ 20:26 — 남은 한계 정리 + 실기기 전체 흐름 재검증 (`e76ac90`)
+
+> 바로 위 작업과 함께 20:29에 한 커밋으로 올림.
 
 - 요청: "그냥 완벽하다고 얘기할수있게 제대로 완성시켜"
 - **소리 없는 클립 병합** — `Composition.Builder.experimentalSetForceAudioTrack(true)`(media3 1.5.0에서의 이름, 이후 버전의 `setForceAudioTrack`)로 오디오 없는 클립 구간을 무음으로 채움.
@@ -318,7 +324,7 @@ RELEASE_KEY_PASSWORD=...
   - 편집 화면 ▶ 재생 → 1.5초 사이 재생선이 약 1.4초 → 3.4초로 이동
 - 화면 방향은 세로 고정(`screenOrientation="portrait"`)이라 회전 시나리오는 해당 없음.
 
-### 2026-09-16 20:34 ~ 20:36 — 릴리즈 서명 설정
+### 2026-09-16 20:34 ~ 20:40 — 릴리즈 서명 설정 (`764446c`)
 
 - 요청: "니가 키스토어 만들고 설정까지 해줘"
 - JDK 17의 `keytool`로 키스토어 생성(RSA 2048, 유효기간 10000일, 별칭 `cutmoa`). 저장소 밖(`D:\keys\`)에 두고, 비밀번호는 무작위 24자로 만들어 git에서 제외된 `local.properties`에만 저장.
@@ -326,14 +332,14 @@ RELEASE_KEY_PASSWORD=...
 - 처음에 `java.util.Properties()`를 `android { }` 근처에서 그대로 쓰니 `Unresolved reference: util` — Gradle Kotlin DSL에서 `java`가 Java 플러그인 확장으로 해석됨. 파일 맨 위에 `import java.util.Properties`로 해결.
 - `assembleRelease` 후 `apksigner verify --print-certs`로 `CN=kjt7942, O=CutMoa, C=KR` 서명 확인. 기존 debug 앱은 서명이 달라 덮어쓰기가 안 되므로 삭제 후 release APK 설치.
 
-### 2026-09-16 20:47 ~ 20:50 — 촬영 화면 위·아래에 흰 띠가 생기던 문제 수정
+### 2026-09-16 20:47 ~ 20:55 — 촬영 화면 위·아래에 흰 띠가 생기던 문제 수정 (`5a5865c`)
 
 - 요청: "영상 촬영화면 풀로 나왔었는데, 왜 위,아래에 흰색배경 보여?"
 - 원인: `LightSystemBarIcons()`가 화면에 들어올 때 이전 시스템 바 설정을 저장했다가, 화면이 사라질 때(`onDispose`) 되돌리는 구조였음. 그런데 화면 전환 애니메이션 중에는 **들어오는 화면이 먼저 설정을 적용하고, 나가는 화면이 나중에 dispose**됨. 결과 화면 → "새로 촬영하기"로 돌아오면 결과 화면의 "복구"가 촬영 화면 설정을 덮어써서 상태바·내비게이션 바에 흰 스크림 + 검은 아이콘이 생김.
 - 수정: 저장/복구를 없애고 `SystemBarsFor(darkContent)`로 **화면마다 자기 모양을 선언**. 적용 시점은 해당 내비게이션 목적지의 `ON_RESUME`(전환이 끝나고 실제로 보이는 화면만 resume됨)이라 순서 경쟁이 생기지 않음. 촬영·결과 화면은 `darkContent = true`, 병합·편집 화면은 `false`.
 - 실기기 확인: 앱 시작 → 촬영(풀화면) → 병합(흰 배경·검은 아이콘) → 편집 → 결과(풀화면) → 새로 촬영하기(풀화면 유지), 병합 화면에서 뒤로 가기(풀화면 유지).
 
-### 2026-09-16 20:56 ~ 21:32 — 자막·이모지 편집 전면 재개발
+### 2026-09-16 20:56 ~ 21:34 — 자막·이모지 편집 전면 재개발 (`bc7803f`, 실기기 확인 `2c391c2`)
 
 - 요청: "텍스트,이모지 추가부분은 레이어표시도 잘 안되고, 조절도 어렵다. 이부분 심도있게 다시 개발해봐. 나 외출하고 올테니까 알아서 고민해서 잘 만들어놔." / "에뮬레이터 없으면 설치해서 테스트해도 돼."
 - **기존 코드 분석 — "조절이 어렵다"의 원인은 조작감보다 더 깊었음**
@@ -362,18 +368,19 @@ RELEASE_KEY_PASSWORD=...
   - 영상 길이 띠와 긴 레이어 바가 화면 폭에서 잘림(`width()`가 부모 폭으로 제한됨) → `wrapContentWidth(unbounded = true)`.
   - 움직임을 켤 때 시작·끝 키프레임을 같이 만들었더니, 중간에서 옮기면 끝에서 제자리로 돌아감 → 현재 위치에 키프레임 하나만 만들고 마지막 이후엔 머물게(`animated` 플래그).
   - 편집 중 뒤로 가기 한 번에 모든 레이어가 확인 없이 사라짐 → 확인창.
-- 알려진 점: 에뮬레이터에서는 편집 화면에 처음 들어왔을 때 멈춘 영상이 검게 보이고 타임라인을 한 번 끌면 나타남(디코더 로그 `fetchGraphicBlock failed`). 같은 `TextureView` 방식을 쓰던 이전 버전이 실제 폰에선 바로 보였기 때문에 에뮬레이터 문제로 판단. → 21:52 Galaxy S25에 release 빌드 설치 후 확인: 첫 진입부터 영상이 바로 보임(에뮬레이터 한정 현상).
+- 알려진 점: 에뮬레이터에서는 편집 화면에 처음 들어왔을 때 멈춘 영상이 검게 보이고 타임라인을 한 번 끌면 나타남(디코더 로그 `fetchGraphicBlock failed`). 같은 `TextureView` 방식을 쓰던 이전 버전이 실제 폰에선 바로 보였기 때문에 에뮬레이터 문제로 판단. → 22:52 Galaxy S25에 release 빌드 설치 후 확인: 첫 진입부터 영상이 바로 보임(에뮬레이터 한정 현상).
 
-### 2026-09-16 23:00 — 첫 릴리스 v1.0 (GitHub Releases)
+### 2026-09-16 23:00 — 첫 릴리스 v1.0 (GitHub Releases, `258ad77`)
 
 - 요청: "apk파일 배포는 어떻게 할 수 있어?" → "GitHub Releases에 올려줘"
 - 배포 방법 비교: 파일 직접 전달 / GitHub Releases / Firebase App Distribution / Google Play(AAB, 등록비·비공개 테스트 필요). 공개 저장소라 링크만으로 받을 수 있고 포트폴리오 링크로도 쓰기 좋은 GitHub Releases를 선택.
 - 이전 빌드 결과를 지우고 release APK를 새로 빌드, `apksigner verify`로 서명(`CN=kjt7942, O=CutMoa, C=KR`), `aapt2 dump badging`으로 패키지·버전(versionCode 1 / versionName 1.0) 확인 후 `gh release create`로 업로드. 릴리스 노트에 SHA-256 기재.
 - 다음 버전부터는 `versionCode`를 올리고 같은 키스토어로 서명해야 기존 설치본 위에 업데이트됨.
+- 친구 배포용 안내: 바로 다운로드 링크(`releases/download/v1.0/CutMoa-v1.0.apk`)를 보내고, 카톡 인앱 브라우저에서 안 받아지면 외부 브라우저로 열기 → "출처를 알 수 없는 앱" 허용 → Play 프로텍트 경고는 "무시하고 설치". 안드로이드 8.0 이상만 가능, 아이폰 불가.
 
 ## 스크린샷
 
-| 촬영 | 클립 병합 | 자막·이모지 오버레이 | 결과 (전체 화면 재생) |
+| 촬영 | 클립 병합 | 자막·이모지 오버레이 (09-16 재개발 전) | 결과 (전체 화면 재생) |
 |---|---|---|---|
 | ![촬영](screenshots/01_camera.jpg) | ![클립 병합](screenshots/02_merge.jpg) | ![자막·이모지](screenshots/03_overlay.jpg) | ![결과](screenshots/04_result.jpg) |
 
@@ -399,6 +406,10 @@ RELEASE_KEY_PASSWORD=...
 |---|---|
 | ![비교](screenshots/12_overlay_preview_vs_export.jpg) | ![키프레임](screenshots/13_overlay_keyframe_frames.jpg) |
 
+| 실기기(Galaxy S25) — 재개발한 편집 화면 첫 진입 |
+|---|
+| ![실기기 편집](screenshots/14_overlay_editor_device.jpg) |
+
 ### 앱 아이콘
 
 | ChatGPT 컨셉 이미지 | 벡터로 다시 그린 최종 아이콘 (왼쪽: 108dp 레이어와 안전 영역, 오른쪽: 원형 마스크 적용) |
@@ -409,20 +420,20 @@ RELEASE_KEY_PASSWORD=...
 
 코드에 남긴 근거(주석)를 기준으로 실제 부딪힌 문제와 해결 방식 정리.
 
-- **클립마다 해상도/프레임레이트가 다르면 병합이 깨짐** — 세로 1080p 클립과 가로 720p 클립을 그냥 이어 붙이면 재생이 멈추거나 깨질 수 있어서, `VideoMerger`가 모든 클립을 병합 전에 동일한 `Presentation`(해상도 + fit 모드)으로 강제 통과시키도록 처리(`VideoMerger.kt:29`).
-- **Media3 Transformer는 진행률 콜백을 안 줌** — push 방식 콜백이 없고 polling으로만 진행 상태를 얻을 수 있어서, `VideoMerger`에서 주기적으로 상태를 poll해 진행률(%)을 계산(`VideoMerger.kt:95`).
+- **클립마다 해상도/프레임레이트가 다르면 병합이 깨짐** — 세로 1080p 클립과 가로 720p 클립을 그냥 이어 붙이면 재생이 멈추거나 깨질 수 있어서, `VideoMerger`가 모든 클립을 병합 전에 동일한 `Presentation`(해상도 + fit 모드)으로 강제 통과시키도록 처리(`VideoMerger.kt:28`).
+- **Media3 Transformer는 진행률 콜백을 안 줌** — push 방식 콜백이 없고 polling으로만 진행 상태를 얻을 수 있어서, `VideoMerger`에서 주기적으로 상태를 poll해 진행률(%)을 계산(`VideoMerger.kt:93`).
 - **WorkManager `Data`는 플랫 값만 전달 가능** — 오버레이 리스트는 아이템마다 키프레임 개수가 다른 가변 구조라 WorkManager로 직접 넘길 수 없음. 별도 직렬화 라이브러리를 추가하는 대신 플랫폼 내장 `org.json`으로 JSON 문자열 하나로 말아서 `OverlayExportWorker`에 전달(`OverlaySerialization.kt:9`).
-- **오버레이 좌표계와 Media3 좌표계가 서로 다름** — 에디터는 화면 기준 fractional 좌상단(0~1, y-down) 좌표를 쓰는데 Media3 오버레이 프레임은 NDC(-1~1, 중심 원점, y-up)라서 그대로 넘기면 텍스트/이모지가 위아래로 뒤집힘. 내보내기 시점에 Y축을 반전해서 변환(`OverlayExporter.kt:135`).
-- **카메라 풀스크린 프리뷰인데 내비게이션 바 뒤에 어두운 스크림이 깔림** — 3버튼 내비게이션 모드에서 시스템이 가독성을 위해 자동으로 scrim을 그려서 카메라 화면이 하단만 어둡게 보임. `isNavigationBarContrastEnforced = false` + 라이트 아이콘 강제로 해제(`CameraScreen.kt:139`).
+- **오버레이 좌표계와 Media3 좌표계가 서로 다름** — 에디터는 화면 기준 fractional 좌상단(0~1, y-down) 좌표를 쓰는데 Media3 오버레이 프레임은 NDC(-1~1, 중심 원점, y-up)라서 그대로 넘기면 텍스트/이모지가 위아래로 뒤집힘. 내보내기 시점에 Y축을 반전해서 변환(`OverlayExporter.kt:124`).
+- **카메라 풀스크린 프리뷰인데 내비게이션 바 뒤에 어두운 스크림이 깔림** — 3버튼 내비게이션 모드에서 시스템이 가독성을 위해 자동으로 scrim을 그려서 카메라 화면이 하단만 어둡게 보임. `isNavigationBarContrastEnforced = false` + 라이트 아이콘 강제로 해제(지금은 `SystemBars.kt:40`의 `SystemBarsFor`).
 - **미리보기와 결과물을 따로 그리면 절대 안 맞음** — 편집 화면은 Compose `Text`(sp, 왼쪽 위 기준), 내보내기는 Media3 `TextOverlay`(px, 가운데 기준)라 위치·크기·배경이 제각각이었음. 좌표계를 "영상 폭 대비 비율 + 가운데 기준"으로 통일하고, 두 쪽이 **같은 비트맵**을 쓰게 해 해결(`OverlayRenderer`). Media3 오버레이는 비트맵을 출력 프레임 픽셀 크기 그대로 그리므로, 가장 크게 커지는 키프레임 배율로 한 번 렌더링하고 프레임마다 `setScale`로 줄여 확대해도 흐려지지 않게 함.
 - **작은 대상에 제스처를 요구하면 조작이 어려움** — 두 손가락을 작은 글자 위에 올리게 하지 말고, 한 손가락으로 잡아 선택·이동하고 두 손가락은 화면 어디서든 선택된 레이어에 적용. 스냅은 원래 제스처 값을 따로 들고 있어야 붙었다 떨어지는 게 자연스러움.
 - **같은 끌기를 두 가지 뜻으로 쓰지 않기** — 타임라인에서 "끌기 = 탐색"과 "끌기 = 레이어 이동"이 겹치면 탐색하다 레이어를 망가뜨림. 끌기는 항상 탐색, 이동은 길게 누른 뒤로 분리.
 - **Compose `width()`는 부모 폭을 넘지 못함** — 화면보다 긴 타임라인 요소는 `wrapContentWidth(unbounded = true)`를 먼저 걸어야 함.
 - **에뮬레이터에서 두 손가락 테스트하기** — `adb shell input`은 한 손가락뿐. `adb root` 후 `getevent -lp`로 멀티터치 장치를 찾고 `sendevent`로 `ABS_MT_SLOT`/`TRACKING_ID`/`POSITION_X·Y`/`PRESSURE`를 보내면 핀치·회전을 재현할 수 있음(`BTN_TOUCH`만으로는 반응 없음).
-- **촬영 진행 바가 1초 단위로 뚝뚝 끊김** — 초 단위 카운터로 진행률을 올리면 바가 계단식으로 점프. 50ms마다 실제 경과 시간(wall clock)으로 진행률을 계산해 부드럽게 채우고, 같은 루프가 시간이 다 되면 자동 종료까지 담당(`CameraScreen.kt:174`).
-- **추적 박스가 찌그러지고 엉뚱한 곳에 그려짐 (1) 스트림마다 화각이 다름** — 4:3 분석 프레임과 프리뷰가 각자 다른 영역을 잘라 써서 좌표가 맞지 않았음. `ViewPort`(9:16, 녹화 영상 비율)로 모든 스트림의 크롭을 통일(`VideoCaptureManager.kt:128`).
-- **(2) CameraX `ImageProxyTransformFactory` 행렬이 축이 뒤바뀐 채 나옴** — 로그로 행렬을 찍어보니 640×480(회전 90°, 크롭 y 60~420) 버퍼를 360×640짜리처럼 매핑하고 있었고, 정사각형 박스가 1:3으로 늘어난 원인과 수치가 정확히 일치. 회전값·크롭 영역으로 직접 변환하는 `BufferMapping`으로 교체하고, 기기에서 찍은 실제 값으로 유닛 테스트 작성(`VideoCaptureManager.kt:383`, `BufferMappingTest`).
-- **어두운 화면에서 추적 박스가 혼자 떠돌아다님** — 렌즈가 가려진 상태처럼 무늬가 없으면 모든 후보 위치의 점수가 비슷하고, 센서 노이즈 때문에 매 프레임 "조금 더 나은" 위치가 생겨 박스가 랜덤하게 이동. 현재 위치보다 20% 이상 좋은 매칭일 때만 이동하도록 변경, 노이즈 프레임 테스트로 재현·검증(`SubjectTracker.kt:71`, `SubjectTrackerTest.staysPutOnDarkNoisyScene`).
+- **촬영 진행 바가 1초 단위로 뚝뚝 끊김** — 초 단위 카운터로 진행률을 올리면 바가 계단식으로 점프. 50ms마다 실제 경과 시간(wall clock)으로 진행률을 계산해 부드럽게 채우고, 같은 루프가 시간이 다 되면 자동 종료까지 담당(`CameraScreen.kt:179`).
+- **추적 박스가 찌그러지고 엉뚱한 곳에 그려짐 (1) 스트림마다 화각이 다름** — 4:3 분석 프레임과 프리뷰가 각자 다른 영역을 잘라 써서 좌표가 맞지 않았음. `ViewPort`(9:16, 녹화 영상 비율)로 모든 스트림의 크롭을 통일(`VideoCaptureManager.kt:188`).
+- **(2) CameraX `ImageProxyTransformFactory` 행렬이 축이 뒤바뀐 채 나옴** — 로그로 행렬을 찍어보니 640×480(회전 90°, 크롭 y 60~420) 버퍼를 360×640짜리처럼 매핑하고 있었고, 정사각형 박스가 1:3으로 늘어난 원인과 수치가 정확히 일치. 회전값·크롭 영역으로 직접 변환하는 `BufferMapping`으로 교체하고, 기기에서 찍은 실제 값으로 유닛 테스트 작성(`VideoCaptureManager.kt:496`, `BufferMappingTest`).
+- **어두운 화면에서 추적 박스가 혼자 떠돌아다님** — 렌즈가 가려진 상태처럼 무늬가 없으면 모든 후보 위치의 점수가 비슷하고, 센서 노이즈 때문에 매 프레임 "조금 더 나은" 위치가 생겨 박스가 랜덤하게 이동. 현재 위치보다 20% 이상 좋은 매칭일 때만 이동하도록 변경, 노이즈 프레임 테스트로 재현·검증(`SubjectTracker.kt:6`의 `MOVE_RATIO`, `SubjectTrackerTest.staysPutOnDarkNoisyScene`).
 - **추적 AF에서 터치한 사물로 초점이 안 옮겨짐** — 초점이 흔들리지 않게 하려고 연속 AF 모드는 그대로 두고 Camera2 Interop으로 `CONTROL_AF_REGIONS`만 바꿨는데, 연속 AF는 장면 변화가 없으면 다시 스캔하지 않아서 영역을 바꿔도 렌즈가 움직이지 않았음. `FocusMeteringAction`으로 명시적으로 AF를 트리거하는 방식으로 교체하고, 결과(`isFocusSuccessful`)를 로그로 남겨 검증.
 - **추적 중 초점이 계속 취소됨** — 박스가 움직일 때마다 0.1초 간격으로 새 초점 요청을 보내니 이전 스캔이 끝나기 전에 취소(`superseded`)되는 게 로그에 찍힘. 이동 거리 조건에 최소 0.7초 간격을 추가해 스캔이 끝날 시간을 확보.
 - **결과 화면 버튼 배경이 위쪽 절반만 사라짐** — 알약 배경을 반투명 검정(`alpha 0.4`)으로 했더니, 버튼이 영상 위쪽 검은 여백(레터박스)과 영상에 걸쳐 있어서 여백 쪽 절반은 검정 위 검정이라 안 보였음. 기기 캡처로 발견하고, 어느 배경 위에서도 보이도록 반투명 회색으로 변경(`ResultScreen.kt`의 `PILL_COLOR`).
@@ -430,18 +441,19 @@ RELEASE_KEY_PASSWORD=...
 - **60fps를 골라도 30fps로 녹화됨** — 바인딩은 성공하는데 `VideoCapture` 로그의 `StreamSpec`이 `expectedFrameRateRange=[0, 0]`(미지정)이고 클립도 30fps. 카메라 특성 덤프의 최소 프레임 간격을 계산해 보니 1080p·720p 스트림은 60fps까지 되지만 **추적 AF용 640×480 분석 스트림이 30fps 한계**라, 같이 묶이면 CameraX가 목표 FPS를 조용히 버림. FPS를 직접 고르면 분석 스트림 없이 바인딩 → 1080p/60이 실제 59.98fps로 저장. 같은 덤프에서 **4K 스트림은 최대 30fps**라 4K/60은 원래 불가능 → FPS 칩을 해상도별 최대 FPS로 거르게 함.
 - **손떨림 보정이 켜져 있으면 4K/24도 무시됨** — 보정을 켠 채 테스트하니 1080p/60은 적용됐지만 4K/24는 다시 `[0, 0]` → 30fps. 조합마다 결과가 달라 믿을 수 없어서, FPS를 직접 고르면 프리뷰·영상 보정을 끄도록 함(24/60fps 촬영은 보정 없음).
 - **알려진 한계 — 촬영 옵션** — FPS를 30이 아닌 값으로 고르거나 4K를 고르면 추적 AF가 꺼지고 탭은 일회성 초점으로 동작. FPS 30은 기존처럼 카메라에 맡겨서 어두운 곳에선 30 미만으로 떨어질 수 있음. 60fps로 찍은 클립도 병합 결과는 1080×1920으로 맞춰짐(4K 클립도 병합하면 1080p).
-- **알려진 한계 — 추적 AF** — 초점 재트리거 조건이 "화면상 이동 거리"라서, 사물이 화면 위치는 그대로인 채 앞뒤로만 움직이면 초점을 다시 잡지 않음(`VideoCaptureManager.kt:291`). 템플릿 매칭 특성상 빠른 움직임·크기 변화·가려짐에 약하고, 놓침 판정 임계값(`lostScore`)은 실기기에서 조정이 필요한 값(`SubjectTracker.kt:21`).
+- **알려진 한계 — 추적 AF** — 초점 재트리거 조건이 "화면상 이동 거리"라서, 사물이 화면 위치는 그대로인 채 앞뒤로만 움직이면 초점을 다시 잡지 않음(`VideoCaptureManager.kt:402`). 템플릿 매칭 특성상 빠른 움직임·크기 변화·가려짐에 약하고, 놓침 판정 임계값(`lostScore`)은 실기기에서 조정이 필요한 값(`SubjectTracker.kt:22`).
 - **`remember`에 저장한 작업 id는 화면 회전에 사라짐** — WorkManager 작업은 화면과 상관없이 계속 도는데, 그 작업의 id를 Compose `remember`에만 들고 있으면 회전하는 순간 id를 잃어 진행률도 결과도 못 받음. 고정 이름으로 작업을 등록(`enqueueUniqueWork`)하면 언제 다시 들어와도 같은 이름으로 찾을 수 있음(`MergeWorker.UNIQUE_WORK_NAME`).
 - **이름으로 조회하면 끝난 작업 기록도 나옴** — WorkManager는 끝난 작업 기록을 한동안 보관해서, 고정 이름으로 조회하면 지난번 SUCCEEDED 기록이 나오고 "완료되면 다음 화면으로" 로직이 화면에 들어오자마자 다시 실행됨. 결과를 받은 직후 `pruneWork()`로 기록을 지워 해결.
 - **dispose 시점에 "원래대로 복구"하는 전역 설정은 화면 전환과 경쟁함** — Compose Navigation은 전환 중 두 화면이 동시에 떠 있고, 나가는 화면의 `onDispose`가 들어오는 화면의 effect보다 늦게 실행됨. 창(window) 같은 전역 상태는 저장/복구 대신 각 화면이 resume될 때 자기 상태를 다시 적용하는 쪽이 안전함(`SystemBars.kt`).
 - **media3 API 이름은 버전마다 다름** — 코드 주석에 적어둔 `EditedMediaItemSequence.Builder().setForceAudioTrack()`는 1.5.0에 없었음. 설치된 jar를 열어 실제 메서드를 찾아보니 `Composition.Builder.experimentalSetForceAudioTrack`. 문서보다 쓰고 있는 버전의 jar를 먼저 확인하는 게 빠름.
-- **알려진 한계 — 수평 가이드** — 센서 구독이 촬영 화면이 떠 있는 동안 유지돼, 앱이 백그라운드로 가도 계속 동작(`LevelGuide.kt:64`).
+- **알려진 한계 — 수평 가이드** — 센서 구독이 촬영 화면이 떠 있는 동안 유지돼, 앱이 백그라운드로 가도 계속 동작(`LevelGuide.kt:66`).
 
 ## 향후 계획
 
 - **자막·이모지 편집 실기기 조작감 확인** — 에뮬레이터로 검증한 제스처(두 손가락 회전·확대, 길게 눌러 이동)를 실제 손가락으로 확인
 - **텍스트 스타일 추가** — 글꼴 선택, 커스텀 색상(HSV 피커), 등장/퇴장 효과(페이드)
 - **테마 아이콘(Android 13+) 대응** — 단색 `monochrome` 레이어 추가
+- **자막 편집 추가 기능** — 레이어 잠금·숨기기, 편집 화면에서 여러 레이어 동시 선택, 편집 내용을 앱 종료 뒤에도 남기는 임시 저장(지금은 편집 화면을 나가면 사라짐)
 - **추적 AF 고도화** — 크기 변화·빠른 움직임 대응(피라미드 탐색, 스케일 추정), 앞뒤로만 움직이는 사물을 위한 주기적 재초점, 필요 시 ML Kit 객체 감지와 병행
 - **포커스 UX 보강** — 길게 눌러 AF/AE 고정(lock), 노출 밝기 슬라이더
 - **가이드 옵션** — 수평 가이드 켜기/끄기 토글(촬영 옵션 다이얼로그에 추가), 수평이 맞았을 때 짧은 진동, 백그라운드 전환 시 센서 해제(`LifecycleResumeEffect`)
@@ -449,6 +461,5 @@ RELEASE_KEY_PASSWORD=...
 - **배경음악(BGM) 삽입** — 병합 영상에 오디오 트랙 추가/믹싱 기능
 - **필터/보정** — 밝기·채도 등 기본 영상 필터, Media3 Effect로 확장
 - **오버레이 템플릿 저장/재사용** — 자주 쓰는 자막·이모지 배치를 템플릿으로 저장했다가 다음 영상에 재사용
-- **편집 화면 재생 시간 표시** — 재생 위치 시간 표시(00:03 / 00:11) 추가 검토
-- **자동 테스트 확대** — 지금은 추적 로직(`SubjectTrackerTest`)과 좌표 변환(`BufferMappingTest`) 5개뿐. `OverlayItem.poseAt` 보간 로직, `VideoMerger` 사양 통일 로직까지 넓히기
-- **배포 준비** — (릴리즈 서명 완료) 스토어용 스크린샷·설명 작성, Play Console 등록
+- **자동 테스트 확대** — 지금은 JVM 유닛 테스트 17개(`SubjectTrackerTest`, `BufferMappingTest`, `OverlayLogicTest`). 기기가 필요한 병합(`VideoMerger`)·렌더링(`OverlayRenderer`)·내보내기는 이번에 adb로 손으로 검증한 것을 계측 테스트(androidTest)로 옮기기
+- **배포** — 릴리즈 서명·GitHub Releases v1.0 완료. 다음은 버전 올릴 때 `versionCode` 자동 증가, Play Console 등록(AAB, 스토어 스크린샷·설명, 개인정보처리방침)
